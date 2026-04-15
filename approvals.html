@@ -739,8 +739,37 @@ function esc(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Сохраняем и восстанавливаем значения textarea при перерисовке
+function saveTextareas() {
+  const vals = {};
+  document.querySelectorAll('textarea[id^="rev-"]').forEach(ta => {
+    if (ta.value.trim()) vals[ta.id] = ta.value;
+  });
+  return vals;
+}
+function restoreTextareas(vals) {
+  Object.entries(vals).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  });
+}
+
+const _origRenderAll = renderAll;
+renderAll = function() {
+  const saved = saveTextareas();
+  _origRenderAll();
+  restoreTextareas(saved);
+};
+
+// Не обновляем если пользователь сейчас печатает
+function safePoll() {
+  const active = document.activeElement;
+  if (active && active.tagName === 'TEXTAREA' && active.value.trim()) return;
+  loadData();
+}
+
 loadData();
-setInterval(loadData, 15000);
+setInterval(safePoll, 15000);
 </script>
 </body>
 </html>
