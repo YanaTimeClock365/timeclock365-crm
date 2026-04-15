@@ -56,6 +56,8 @@ async function initDB() {
       item_id TEXT,
       comment TEXT NOT NULL,
       status TEXT DEFAULT 'pending',
+      original_content TEXT,
+      summary TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
       resolved_at TIMESTAMP
     )
@@ -343,9 +345,19 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { type, itemId, comment } = JSON.parse(body);
+        // Сохраняем оригинальный контент для сравнения до/после
+        let originalContent = '';
+        try {
+          const orig = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
+          if (orig.rows[0]) {
+            const d = orig.rows[0].data;
+            originalContent = d.editedContent || d.content || d.description || '';
+          }
+        } catch(e) {}
+
         await pool.query(
-          'INSERT INTO revisions (type, item_id, comment, status) VALUES ($1, $2, $3, $4)',
-          [type, itemId, comment, 'pending']
+          'INSERT INTO revisions (type, item_id, comment, status, original_content) VALUES ($1, $2, $3, $4, $5)',
+          [type, itemId, comment, 'pending', originalContent]
         );
         // Подтверждение Вике что правка принята
         if (config.VIKA_EMAIL) {
@@ -387,8 +399,8 @@ const server = http.createServer(async (req, res) => {
       try {
         const { revisionId, summary, type, itemId, newContent } = JSON.parse(body);
         await pool.query(
-          'UPDATE revisions SET status = $1, resolved_at = NOW() WHERE id = $2',
-          ['resolved', revisionId]
+          'UPDATE revisions SET status = $1, resolved_at = NOW(), summary = $2 WHERE id = $3',
+          ['resolved', summary || '', revisionId]
         );
         // Обновить контент в approvals если передан
         if (newContent && type && itemId) {

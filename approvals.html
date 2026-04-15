@@ -217,7 +217,11 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
 .rev-block textarea:focus { border-color: #3479E9; }
 .btn-rev { background: #FF981B; color: #fff; padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 13px; margin-top: 8px; }
 .rev-pending { font-size: 12px; padding: 8px 12px; background: #fffbf0; border: 1px solid #FFD099; border-radius: 6px; color: #E87A00; }
-.rev-done    { font-size: 12px; padding: 8px 12px; background: #f0faf5; border: 1px solid #b2e8cc; border-radius: 6px; color: #12B76A; margin-bottom: 10px; }
+.rev-done    { font-size: 12px; padding: 10px 14px; background: #f0faf5; border: 1px solid #b2e8cc; border-radius: 6px; color: #12B76A; margin-bottom: 10px; }
+.diff-block  { margin-top: 10px; border-radius: 6px; overflow: hidden; font-size: 13px; }
+.diff-was    { background: #fff5f5; border-left: 3px solid #f87171; padding: 10px 14px; color: #666; line-height: 1.6; }
+.diff-now    { background: #f0faf5; border-left: 3px solid #12B76A; padding: 10px 14px; color: #333; line-height: 1.6; }
+.diff-label  { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
 
 /* Landing URL */
 .landing-url { color: #3479E9; font-size: 13px; text-decoration: none; display: block; margin-top: 8px; }
@@ -429,8 +433,17 @@ function renderPosts() {
       </div>
       <div class="rev-block">
         <div class="rev-label">💬 Ask agent to rewrite this post</div>
-        ${pendRev ? `<div class="rev-pending">⏳ Revision in progress: "${esc(pendRev.comment)}"</div>`
-          : `${doneRev?`<div class="rev-done">✅ Last revision applied — check the text above</div>`:''}
+        ${pendRev
+          ? `<div class="rev-pending">⏳ Revision requested: "<em>${esc(pendRev.comment)}</em>" — agent is working on it</div>`
+          : `${doneRev ? `
+              <div class="rev-done">
+                ✅ Agent revised this post
+                ${doneRev.summary ? `<div style="margin-top:6px;font-weight:600;color:#0d6b3a;">What changed: ${esc(doneRev.summary)}</div>` : ''}
+              </div>
+              ${doneRev.original_content ? `<div class="diff-block">
+                <div class="diff-was"><div class="diff-label" style="color:#dc2626;">▼ BEFORE</div>${esc(doneRev.original_content.slice(0,300))}${doneRev.original_content.length>300?'…':''}</div>
+                <div class="diff-now"><div class="diff-label" style="color:#12B76A;">▲ AFTER — see updated text above</div>Comment: "<em>${esc(doneRev.comment)}</em>"</div>
+              </div>` : ''}` : ''}
              <textarea id="rev-post-${i}" placeholder="e.g. make it shorter, emphasize door access control, add a question at the end..."></textarea>
              <br><button class="btn-rev" onclick="submitRev('posts',${i},'${itemId}')">📨 Send to agent</button>`}
       </div>
@@ -475,8 +488,17 @@ function renderLandings() {
       </div>
       <div class="rev-block">
         <div class="rev-label">💬 Ask agent to revise this landing</div>
-        ${pendRev ? `<div class="rev-pending">⏳ Revision in progress: "${esc(pendRev.comment)}"<br><small>Agent will email you when done.</small></div>`
-          : `${doneRev?`<div class="rev-done">✅ Last revision applied — check text above, then click Approve</div>`:''}
+        ${pendRev
+          ? `<div class="rev-pending">⏳ Revision requested: "<em>${esc(pendRev.comment)}</em>" — agent is working on it</div>`
+          : `${doneRev ? `
+              <div class="rev-done">
+                ✅ Agent revised this landing
+                ${doneRev.summary ? `<div style="margin-top:6px;font-weight:600;color:#0d6b3a;">What changed: ${esc(doneRev.summary)}</div>` : ''}
+              </div>
+              ${doneRev.original_content ? `<div class="diff-block">
+                <div class="diff-was"><div class="diff-label" style="color:#dc2626;">▼ BEFORE</div>${esc(doneRev.original_content.slice(0,400))}${doneRev.original_content.length>400?'…':''}</div>
+                <div class="diff-now"><div class="diff-label" style="color:#12B76A;">▲ AFTER — see updated text above</div>Comment: "<em>${esc(doneRev.comment)}</em>"</div>
+              </div>` : ''}` : ''}
              <textarea id="rev-landing-${i}" placeholder="e.g. add focus on door access control in the first paragraph, remove word 'innovative', make headline shorter..."></textarea>
              <br><button class="btn-rev" onclick="submitRev('landings',${i},'${itemId}')">📨 Send to agent</button>`}
       </div>
