@@ -688,6 +688,8 @@ async function submitRev(type,index,itemId) {
   const ta = document.getElementById(`rev-${type}-${index}`);
   const comment = ta?.value.trim();
   if(!comment){showToast('Please write a comment first');return;}
+  // Удаляем черновик из localStorage
+  if (ta) localStorage.removeItem('draft_' + ta.id);
   // Immediately show processing state in the rev-block
   const revBlockEl = ta?.closest('.rev-block');
   if (revBlockEl) {
@@ -739,37 +741,34 @@ function esc(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Сохраняем и восстанавливаем значения textarea при перерисовке
-function saveTextareas() {
-  const vals = {};
+// Сохраняем текст в localStorage при каждом нажатии клавиши
+document.addEventListener('input', e => {
+  if (e.target.tagName === 'TEXTAREA' && e.target.id.startsWith('rev-')) {
+    if (e.target.value.trim()) {
+      localStorage.setItem('draft_' + e.target.id, e.target.value);
+    } else {
+      localStorage.removeItem('draft_' + e.target.id);
+    }
+  }
+});
+
+// После каждой перерисовки восстанавливаем черновики из localStorage
+function restoreDrafts() {
   document.querySelectorAll('textarea[id^="rev-"]').forEach(ta => {
-    if (ta.value.trim()) vals[ta.id] = ta.value;
-  });
-  return vals;
-}
-function restoreTextareas(vals) {
-  Object.entries(vals).forEach(([id, val]) => {
-    const el = document.getElementById(id);
-    if (el) el.value = val;
+    const saved = localStorage.getItem('draft_' + ta.id);
+    if (saved) ta.value = saved;
   });
 }
 
+// Оборачиваем renderAll — после рендера всегда восстанавливаем черновики
 const _origRenderAll = renderAll;
-renderAll = function() {
-  const saved = saveTextareas();
+window.renderAll = function() {
   _origRenderAll();
-  restoreTextareas(saved);
+  restoreDrafts();
 };
 
-// Не обновляем если пользователь сейчас печатает
-function safePoll() {
-  const active = document.activeElement;
-  if (active && active.tagName === 'TEXTAREA' && active.value.trim()) return;
-  loadData();
-}
-
 loadData();
-setInterval(safePoll, 15000);
+setInterval(loadData, 60000); // раз в минуту
 </script>
 </body>
 </html>
