@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Алексей Морозов",
+    "email": "a.morozov@techcorp.ru",
+    "source": "clockify-alternative",
+    "subscribedAt": "2026-04-14T08:12:00.000Z",
+    "email1Sent": "2026-04-14T08:27:00.000Z",
+    "email2Sent": null,
+    "email3Sent": null,
+    "status": "new",
+    "notes": "",
+    "completed": false
+  },
+  {
+    "name": "Марина Соколова",
+    "email": "m.sokolova@buildinvest.com",
+    "source": "hubstaff-alternative",
+    "subscribedAt": "2026-04-13T14:05:00.000Z",
+    "email1Sent": "2026-04-13T14:20:00.000Z",
+    "email2Sent": "2026-04-14T09:00:00.000Z",
+    "email3Sent": null,
+    "status": "hot",
+    "notes": "Спросила про интеграцию с 1С",
+    "completed": false
+  },
+  {
+    "name": "Дмитрий Власов",
+    "email": "d.vlasov@manufactory.ru",
+    "source": "toggl-alternative",
+    "subscribedAt": "2026-04-11T10:30:00.000Z",
+    "email1Sent": "2026-04-11T10:45:00.000Z",
+    "email2Sent": "2026-04-12T09:00:00.000Z",
+    "email3Sent": "2026-04-14T09:00:00.000Z",
+    "status": "demo",
+    "notes": "Демо назначено на 17 апреля",
+    "completed": true
+  }
+]
