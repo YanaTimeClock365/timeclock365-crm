@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
 const { Pool } = require('pg');
-const Anthropic = require('@anthropic-ai/sdk');
+const AnthropicModule = require('@anthropic-ai/sdk');
+const Anthropic = AnthropicModule.default || AnthropicModule;
 
 const config = require('./config');
 const emails = require('./emails');
@@ -302,9 +303,12 @@ Rules:
 
     console.log(`✓ Revision ${revisionId} complete: ${summary}`);
   } catch (err) {
-    console.error(`✗ Revision ${revisionId} failed:`, err.message);
+    console.error(`✗ Revision ${revisionId} failed:`, err.message, err.stack?.split('\n')[1]);
     try {
-      await pool.query('UPDATE revisions SET status = $1 WHERE id = $2', ['failed', revisionId]);
+      await pool.query(
+        'UPDATE revisions SET status = $1, summary = $2 WHERE id = $3',
+        ['failed', 'Error: ' + err.message, revisionId]
+      );
     } catch(e2) {}
   }
 }
@@ -603,6 +607,15 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
       }
     });
+
+  // POST /reset-revisions — сбросить все failed/pending правки
+  } else if (req.method === 'POST' && req.url === '/reset-revisions') {
+    try {
+      await pool.query("DELETE FROM revisions WHERE status IN ('failed','pending','processing')");
+      res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
 
   } else {
     res.writeHead(404); res.end('Not found');
