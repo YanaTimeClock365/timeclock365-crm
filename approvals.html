@@ -415,7 +415,7 @@ function revBlock(revisions, itemId, type, idx) {
         <div class="spinner"></div>
         <div><strong>🔄 Agent is revising now...</strong><br>
         Comment: "<em>${esc(rev.comment)}</em>"<br>
-        <span style="font-size:11px;color:#666;margin-top:2px;display:block;">This page refreshes every 15 sec — the result will appear automatically</span></div>
+        <span style="font-size:11px;color:#666;margin-top:2px;display:block;">The result will appear automatically within ~2 minutes</span></div>
       </div>`;
   }
 
@@ -698,14 +698,13 @@ async function submitRev(type,index,itemId) {
         <div class="spinner"></div>
         <div><strong>🔄 Agent is revising now...</strong><br>
         Comment: "<em>${esc(comment)}</em>"<br>
-        <span style="font-size:11px;color:#666;margin-top:2px;display:block;">Result will appear in a few seconds</span></div>
+        <span style="font-size:11px;color:#666;margin-top:2px;display:block;">Result will appear within ~2 minutes</span></div>
       </div>`;
   }
   await fetch('/request-revision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,itemId,comment})});
-  showToast('🔄 Agent is working on it now...');
-  // Reload data after a short delay (API call takes ~5-10s)
-  setTimeout(() => loadData(), 8000);
-  setTimeout(() => loadData(), 15000);
+  showToast('📨 Sent! Agent will revise within ~2 minutes.');
+  setTimeout(() => loadData(), 30000);
+  setTimeout(() => loadData(), 90000);
 }
 
 async function updateItem(type,index,changes) {
