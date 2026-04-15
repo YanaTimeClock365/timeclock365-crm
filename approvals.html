@@ -562,9 +562,17 @@ function renderHistory(type, items) {
   const rows = Object.entries(grouped).sort((a,b)=>b[0].localeCompare(a[0])).map(([month,its])=>`
     <div class="history-month">${month}</div>
     ${its.map(it=>`
-      <div class="history-item">
-        <div><div class="history-item-title">${esc(it.title||it.subject||it.content?.slice(0,60)||type)}</div><div class="history-item-meta">${it.date||''}</div></div>
-        ${statusBadge(it.status)}
+      <div class="history-item" style="flex-direction:column;align-items:flex-start;gap:8px;">
+        <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+          <div>
+            <div class="history-item-title">${esc(it.title||it.subject||it.content?.slice(0,60)||type)}</div>
+            <div class="history-item-meta">${it.date||''}</div>
+          </div>
+          ${statusBadge(it.status)}
+        </div>
+        ${it.description||it.editedContent ? `<div style="font-size:13px;color:#666;line-height:1.6;border-left:3px solid #e0e0e0;padding-left:12px;">${esc((it.editedContent||it.description||'').slice(0,300))}${(it.editedContent||it.description||'').length>300?'…':''}</div>` : ''}
+        ${it.previewUrl ? `<a href="${it.previewUrl}" target="_blank" style="font-size:12px;color:#3479E9;text-decoration:none;">🔗 ${it.previewUrl}</a>` : ''}
+        ${it.content && type==='posts' ? `<div style="font-size:13px;color:#555;line-height:1.6;background:#f9f9f9;border-radius:4px;padding:10px;width:100%;">${esc(it.content.slice(0,200))}${it.content.length>200?'…':''}</div>` : ''}
       </div>`).join('')}
   `).join('');
   const uid = 'hist-'+type+'-'+Date.now();
