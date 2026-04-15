@@ -157,7 +157,7 @@ async function sendApprovalNotification(type, item) {
   try {
     await transporter.sendMail({
       from: `"TimeClock 365" <${config.GMAIL_USER}>`,
-      to: [config.OWNER_EMAIL, config.VIKA_EMAIL].filter(Boolean).join(','),
+      to: config.VIKA_EMAIL || config.OWNER_EMAIL,
       subject: `[TimeClock 365] Новое на согласование: ${label}`,
       html: `
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
@@ -347,30 +347,31 @@ const server = http.createServer(async (req, res) => {
           'INSERT INTO revisions (type, item_id, comment, status) VALUES ($1, $2, $3, $4)',
           [type, itemId, comment, 'pending']
         );
-        // Уведомление по email
-        await transporter.sendMail({
-          from: `"TimeClock 365" <${config.GMAIL_USER}>`,
-          to: [config.OWNER_EMAIL, config.VIKA_EMAIL].filter(Boolean).join(','),
-          subject: `[TimeClock 365] Запрос правки: ${type}`,
-          html: `
-            <div style="font-family:Arial,sans-serif;max-width:600px;">
-              <div style="background:#FF981B;padding:16px 24px;border-radius:8px 8px 0 0;">
-                <h2 style="color:#fff;margin:0;">✏️ Запрос правки</h2>
-              </div>
-              <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
-                <p><strong>Тип:</strong> ${type}</p>
-                <p><strong>Элемент:</strong> ${itemId}</p>
-                <div style="background:#fffbf0;border-left:4px solid #FF981B;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
-                  <strong>Комментарий:</strong><br>${comment}
+        // Подтверждение Вике что правка принята
+        if (config.VIKA_EMAIL) {
+          await transporter.sendMail({
+            from: `"TimeClock 365" <${config.GMAIL_USER}>`,
+            to: config.VIKA_EMAIL,
+            subject: `[TimeClock 365] ⏳ Правка принята — агент работает`,
+            html: `
+              <div style="font-family:Arial,sans-serif;max-width:600px;">
+                <div style="background:#FF981B;padding:16px 24px;border-radius:8px 8px 0 0;">
+                  <h2 style="color:#fff;margin:0;">✏️ Правка принята</h2>
                 </div>
-                <p style="color:#888;font-size:13px;">Агент обработает правку автоматически в течение часа.</p>
-                <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
-                  Открыть согласование →
-                </a>
+                <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
+                  <p>Агент получил твой комментарий и скоро внесёт правки.</p>
+                  <div style="background:#fffbf0;border-left:4px solid #FF981B;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
+                    <strong>Твой комментарий:</strong><br>${comment}
+                  </div>
+                  <p style="color:#888;font-size:13px;">Как только агент внесёт изменения — ты получишь отдельное письмо с результатом.</p>
+                  <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
+                    Открыть согласование →
+                  </a>
+                </div>
               </div>
-            </div>
-          `,
-        });
+            `,
+          });
+        }
         console.log(`+ Правка: ${type} "${itemId}" — "${comment.slice(0,50)}"`);
         res.writeHead(200); res.end(JSON.stringify({ ok: true }));
       } catch(e) {
@@ -400,29 +401,30 @@ const server = http.createServer(async (req, res) => {
             );
           }
         }
-        // Уведомление о завершении правки
-        await transporter.sendMail({
-          from: `"TimeClock 365" <${config.GMAIL_USER}>`,
-          to: [config.OWNER_EMAIL, config.VIKA_EMAIL].filter(Boolean).join(','),
-          subject: `[TimeClock 365] ✅ Правка внесена: ${type}`,
-          html: `
-            <div style="font-family:Arial,sans-serif;max-width:600px;">
-              <div style="background:#12B76A;padding:16px 24px;border-radius:8px 8px 0 0;">
-                <h2 style="color:#fff;margin:0;">✅ Правка внесена</h2>
-              </div>
-              <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
-                <p><strong>Тип:</strong> ${type}</p>
-                <p><strong>Элемент:</strong> ${itemId}</p>
-                <div style="background:#f0faf5;border-left:4px solid #12B76A;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
-                  <strong>Что изменено:</strong><br>${summary}
+        // Уведомление Вике что правка готова — она смотрит и решает
+        if (config.VIKA_EMAIL) {
+          await transporter.sendMail({
+            from: `"TimeClock 365" <${config.GMAIL_USER}>`,
+            to: config.VIKA_EMAIL,
+            subject: `[TimeClock 365] ✅ Агент внёс правки — проверь`,
+            html: `
+              <div style="font-family:Arial,sans-serif;max-width:600px;">
+                <div style="background:#12B76A;padding:16px 24px;border-radius:8px 8px 0 0;">
+                  <h2 style="color:#fff;margin:0;">✅ Правки внесены</h2>
                 </div>
-                <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
-                  Посмотреть результат →
-                </a>
+                <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
+                  <p>Агент исправил материал по твоему комментарию. Посмотри и если всё ок — нажми «Одобрить».</p>
+                  <div style="background:#f0faf5;border-left:4px solid #12B76A;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
+                    <strong>Что изменено:</strong><br>${summary}
+                  </div>
+                  <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;margin-top:8px;">
+                    Проверить и одобрить →
+                  </a>
+                </div>
               </div>
-            </div>
-          `,
-        });
+            `,
+          });
+        }
         console.log(`✓ Правка завершена: ${type} "${itemId}"`);
         res.writeHead(200); res.end(JSON.stringify({ ok: true }));
       } catch(e) {
@@ -458,21 +460,22 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
+        // Яне — она публикует в LinkedIn
         await transporter.sendMail({
           from: `"TimeClock 365" <${config.GMAIL_USER}>`,
-          to: [config.OWNER_EMAIL, config.VIKA_EMAIL].filter(Boolean).join(','),
-          subject: `[TimeClock 365] 📢 Посты выбраны для публикации`,
+          to: config.OWNER_EMAIL,
+          subject: `[TimeClock 365] 📢 Вика одобрила посты — опубликуй в LinkedIn`,
           html: `
             <div style="font-family:Arial,sans-serif;max-width:600px;">
               <div style="background:#3479E9;padding:16px 24px;border-radius:8px 8px 0 0;">
-                <h2 style="color:#fff;margin:0;">📢 Посты выбраны для публикации</h2>
+                <h2 style="color:#fff;margin:0;">📢 Посты одобрены Викой</h2>
               </div>
               <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
-                <p>Выбрано постов: <strong>${selectedIndices.length}</strong> (№ ${selectedIndices.map(i => i+1).join(', ')})</p>
+                <p>Вика выбрала <strong>${selectedIndices.length}</strong> ${selectedIndices.length === 1 ? 'пост' : 'поста'} для публикации (№ ${selectedIndices.map(i => i+1).join(', ')}).</p>
+                <p style="margin-bottom:16px;color:#555;">Скопируй текст каждого поста и опубликуй в LinkedIn:</p>
                 ${selectedPosts}
-                <p style="color:#888;font-size:13px;">Скопируй текст выбранных постов и опубликуй в LinkedIn.</p>
                 <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
-                  Открыть посты →
+                  Открыть согласование →
                 </a>
               </div>
             </div>

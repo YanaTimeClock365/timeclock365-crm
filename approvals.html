@@ -16,7 +16,6 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
   justify-content: space-between;
 }
 .header h1 { color: #fff; font-size: 18px; }
-.header a { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 13px; }
 
 .tabs {
   background: #fff;
@@ -49,20 +48,50 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
 .section { display: none; }
 .section.active { display: block; }
 
+/* Workflow hint */
+.workflow-hint {
+  background: #EEF4FF;
+  border: 1px solid #c5d8ff;
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #3479E9;
+  line-height: 1.6;
+}
+
+/* Publish bar */
+.publish-bar {
+  background: #3479E9;
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.publish-bar.visible { display: flex; }
+.publish-bar span { font-size: 14px; font-weight: 600; }
+.btn-publish-bar { background: #fff; color: #3479E9; padding: 8px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; font-size: 14px; }
+.btn-publish-bar:hover { background: #eef4ff; }
+
 /* Card */
 .card {
   background: #fff;
   border-radius: 8px;
   border: 1px solid #e0e0e0;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   overflow: hidden;
   transition: box-shadow 0.2s;
 }
 .card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
 .card.approved { border-color: #12B76A; }
 .card.rejected { border-color: #ddd; opacity: 0.6; }
-.card.edited { border-color: #FF981B; }
-.card.read { border-color: #12B76A; opacity: 0.8; }
+.card.edited   { border-color: #FF981B; }
+.card.read     { border-color: #12B76A; opacity: 0.8; }
+.card.selected { border-color: #3479E9; box-shadow: 0 0 0 2px rgba(52,121,233,0.18); }
 
 .card-header {
   padding: 14px 20px;
@@ -72,15 +101,15 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
   border-bottom: 1px solid #f0f0f0;
   background: #fafafa;
 }
-.card-title { font-weight: 600; font-size: 14px; }
-.card-meta { font-size: 12px; color: #888; }
+.card-title { font-weight: 600; font-size: 15px; }
+.card-meta  { font-size: 12px; color: #888; margin-top: 2px; }
 
 .card-body { padding: 20px; }
 
 /* Post text */
 .post-text {
   font-size: 15px;
-  line-height: 1.7;
+  line-height: 1.75;
   color: #333;
   white-space: pre-wrap;
   background: #f9f9f9;
@@ -115,6 +144,7 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
   gap: 8px;
   border-top: 1px solid #f0f0f0;
   align-items: center;
+  flex-wrap: wrap;
 }
 .btn {
   padding: 8px 18px;
@@ -126,25 +156,104 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
   transition: opacity 0.2s;
 }
 .btn:hover { opacity: 0.85; }
-.btn-approve { background: #12B76A; color: #fff; }
-.btn-reject  { background: #f5f5f5; color: #888; border: 1px solid #ddd; }
-.btn-edit    { background: #FFF3E0; color: #E87A00; border: 1px solid #FFD099; }
-.btn-save    { background: #FF981B; color: #fff; display: none; }
-.btn-copy    { background: #EEF4FF; color: #3479E9; border: 1px solid #c5d8ff; }
-.btn-read    { background: #E8F8EE; color: #12B76A; border: 1px solid #b2e8cc; }
+.btn-approve  { background: #12B76A; color: #fff; }
+.btn-reject   { background: #f5f5f5; color: #888; border: 1px solid #ddd; }
+.btn-edit     { background: #FFF3E0; color: #E87A00; border: 1px solid #FFD099; }
+.btn-save     { background: #FF981B; color: #fff; display: none; }
+.btn-copy     { background: #EEF4FF; color: #3479E9; border: 1px solid #c5d8ff; }
+.btn-read     { background: #E8F8EE; color: #12B76A; border: 1px solid #b2e8cc; }
 
 .status-badge {
   font-size: 12px;
   padding: 4px 12px;
   border-radius: 20px;
   font-weight: 600;
-  margin-left: auto;
+  white-space: nowrap;
 }
 .status-pending  { background: #EEF4FF; color: #3479E9; }
 .status-approved { background: #E8F8EE; color: #12B76A; }
 .status-rejected { background: #f5f5f5; color: #888; }
 .status-edited   { background: #FFF3E0; color: #E87A00; }
 .status-read     { background: #E8F8EE; color: #12B76A; }
+
+/* Checkbox */
+.post-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #3479E9; margin-right: 10px; flex-shrink: 0; }
+
+/* Revision block */
+.revision-block {
+  border-top: 2px dashed #f0f0f0;
+  padding: 16px 20px;
+  background: #fafbfc;
+}
+.revision-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 10px;
+}
+.revision-block textarea {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: Arial, sans-serif;
+  resize: vertical;
+  min-height: 72px;
+  outline: none;
+  color: #333;
+}
+.revision-block textarea:focus { border-color: #3479E9; }
+.btn-revision {
+  background: #FF981B;
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  margin-top: 8px;
+}
+.btn-revision:hover { opacity: 0.88; }
+.revision-pending {
+  font-size: 12px;
+  padding: 8px 12px;
+  background: #fffbf0;
+  border: 1px solid #FFD099;
+  border-radius: 6px;
+  color: #E87A00;
+}
+.revision-done {
+  font-size: 12px;
+  padding: 8px 12px;
+  background: #f0faf5;
+  border: 1px solid #b2e8cc;
+  border-radius: 6px;
+  color: #12B76A;
+  margin-bottom: 10px;
+}
+
+/* Landing URL */
+.landing-url {
+  color: #3479E9;
+  font-size: 13px;
+  text-decoration: none;
+  display: block;
+  margin-top: 8px;
+}
+
+/* Insight list */
+.insight-list { list-style: none; padding: 0; }
+.insight-list li {
+  padding: 10px 14px;
+  border-left: 3px solid #3479E9;
+  background: #f9f9f9;
+  margin-bottom: 8px;
+  border-radius: 0 6px 6px 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
 
 .empty {
   text-align: center;
@@ -166,82 +275,10 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
   opacity: 0;
   transition: opacity 0.3s;
   z-index: 999;
+  max-width: 360px;
+  line-height: 1.4;
 }
 .toast.show { opacity: 1; }
-
-.landing-url {
-  color: #3479E9;
-  font-size: 13px;
-  text-decoration: none;
-  display: block;
-  margin-top: 6px;
-}
-
-/* Publish bar */
-.publish-bar {
-  background: #3479E9;
-  color: #fff;
-  padding: 12px 20px;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.publish-bar.visible { display: flex; }
-.publish-bar span { font-size: 14px; font-weight: 600; }
-.btn-publish { background: #fff; color: #3479E9; padding: 8px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; font-size: 14px; }
-.btn-publish:hover { background: #eef4ff; }
-
-/* Checkbox select */
-.post-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #3479E9; margin-right: 8px; }
-.card.selected { border-color: #3479E9; box-shadow: 0 0 0 2px rgba(52,121,233,0.2); }
-
-/* Revision block */
-.revision-block {
-  border-top: 1px solid #f0f0f0;
-  padding: 16px 20px;
-  background: #fafafa;
-}
-.revision-block textarea {
-  width: 100%;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-family: Arial, sans-serif;
-  resize: vertical;
-  min-height: 80px;
-  margin-top: 8px;
-  outline: none;
-}
-.revision-block textarea:focus { border-color: #3479E9; }
-.revision-label { font-size: 13px; color: #666; font-weight: 600; }
-.btn-revision { background: #FF981B; color: #fff; padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 13px; margin-top: 8px; }
-.btn-revision:hover { opacity: 0.85; }
-.revision-status {
-  font-size: 12px;
-  padding: 6px 12px;
-  background: #fffbf0;
-  border: 1px solid #FFD099;
-  border-radius: 6px;
-  color: #E87A00;
-  margin-top: 8px;
-}
-.revision-status.resolved { background: #f0faf5; border-color: #b2e8cc; color: #12B76A; }
-
-/* Insight list */
-.insight-list { list-style: none; padding: 0; }
-.insight-list li {
-  padding: 10px 14px;
-  border-left: 3px solid #3479E9;
-  background: #f9f9f9;
-  margin-bottom: 8px;
-  border-radius: 0 6px 6px 0;
-  font-size: 14px;
-  line-height: 1.6;
-}
 </style>
 </head>
 <body>
@@ -255,47 +292,44 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
 </div>
 
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('posts')">
-    LinkedIn посты <span class="count" id="count-posts">0</span>
-  </div>
-  <div class="tab" onclick="switchTab('landings')">
-    Лендинги <span class="count" id="count-landings">0</span>
-  </div>
-  <div class="tab" onclick="switchTab('emails')">
-    Письма <span class="count" id="count-emails">0</span>
-  </div>
-  <div class="tab" onclick="switchTab('competitors')">
-    Конкуренты <span class="count" id="count-competitors">0</span>
-  </div>
-  <div class="tab" onclick="switchTab('seo')">
-    SEO идеи <span class="count" id="count-seo">0</span>
-  </div>
-  <div class="tab" onclick="switchTab('weekly')">
-    Недельный отчёт <span class="count" id="count-weekly">0</span>
-  </div>
-  <div class="tab" onclick="switchTab('monthly')">
-    Месячный отчёт <span class="count" id="count-monthly">0</span>
-  </div>
+  <div class="tab active" onclick="switchTab('posts')">LinkedIn посты <span class="count" id="count-posts"></span></div>
+  <div class="tab" onclick="switchTab('landings')">Лендинги <span class="count" id="count-landings"></span></div>
+  <div class="tab" onclick="switchTab('emails')">Письма <span class="count" id="count-emails"></span></div>
+  <div class="tab" onclick="switchTab('competitors')">Конкуренты <span class="count" id="count-competitors"></span></div>
+  <div class="tab" onclick="switchTab('seo')">SEO идеи <span class="count" id="count-seo"></span></div>
+  <div class="tab" onclick="switchTab('weekly')">Недельный отчёт <span class="count" id="count-weekly"></span></div>
+  <div class="tab" onclick="switchTab('monthly')">Месячный отчёт <span class="count" id="count-monthly"></span></div>
 </div>
 
 <div class="content">
 
   <!-- ПОСТЫ -->
   <div id="section-posts" class="section active">
+    <div class="workflow-hint">
+      📋 <strong>Как работать с постами:</strong> Выбери посты галочкой → нажми «Одобрить выбранные» — Яне придёт уведомление опубликовать их.
+      Или оставь комментарий к любому посту → агент исправит и пришлёт тебе уведомление.
+    </div>
     <div class="publish-bar" id="publish-bar">
-      <span id="publish-bar-text">Выбрано: 0 постов</span>
-      <button class="btn-publish" onclick="publishSelected()">📢 Опубликовать выбранные</button>
+      <span id="publish-bar-text">Выбрано постов: 0</span>
+      <button class="btn-publish-bar" onclick="publishSelected()">✅ Одобрить выбранные → Яне придёт уведомление</button>
     </div>
     <div id="posts-list"></div>
   </div>
 
   <!-- ЛЕНДИНГИ -->
   <div id="section-landings" class="section">
+    <div class="workflow-hint">
+      🏗️ <strong>Как работать с лендингами:</strong> Посмотри текст → если нужны правки, напиши комментарий и нажми «Отправить на правку».
+      Агент исправит и пришлёт тебе письмо. Когда всё ок — нажми «Одобрить» и Яна опубликует.
+    </div>
     <div id="landings-list"></div>
   </div>
 
   <!-- ПИСЬМА -->
   <div id="section-emails" class="section">
+    <div class="workflow-hint">
+      ✉️ <strong>Письма для лидов:</strong> Просмотри цепочку прогрева. Одобри или оставь правки.
+    </div>
     <div id="emails-list"></div>
   </div>
 
@@ -328,28 +362,22 @@ let data = { posts: [], landings: [], emails: [], competitors: [], seo: [], week
 let revisions = [];
 let selectedPosts = new Set();
 
+// ===== ЗАГРУЗКА ДАННЫХ =====
 async function loadData() {
   try {
-    const [appRes, revRes] = await Promise.all([
-      fetch('/approvals'),
-      fetch('/revisions')
-    ]);
+    const [appRes, revRes] = await Promise.all([fetch('/approvals'), fetch('/revisions')]);
     data = await appRes.json();
     revisions = await revRes.json();
-    ['posts','landings','emails','competitors','seo','weekly','monthly'].forEach(k => {
-      if (!data[k]) data[k] = [];
-    });
+    ['posts','landings','emails','competitors','seo','weekly','monthly'].forEach(k => { if (!data[k]) data[k] = []; });
     renderAll();
-  } catch(e) {
-    console.error('Ошибка загрузки:', e);
-  }
+  } catch(e) { console.error('Ошибка загрузки:', e); }
 }
 
 function renderAll() {
   renderPosts();
   renderLandings();
   renderEmails();
-  renderReports('competitors', 'competitors-list', 'Конкурентов нет', 'Агент добавит анализ в понедельник');
+  renderReports('competitors', 'competitors-list', 'Анализа конкурентов нет', 'Агент добавит анализ в понедельник');
   renderReports('seo', 'seo-list', 'SEO идей нет', 'Агент добавит идеи в среду');
   renderReports('weekly', 'weekly-list', 'Недельного отчёта нет', 'Агент добавит отчёт в пятницу');
   renderReports('monthly', 'monthly-list', 'Месячного отчёта нет', 'Агент добавит отчёт 1-го числа');
@@ -357,14 +385,12 @@ function renderAll() {
 }
 
 function updateCounts() {
-  const pending = (arr) => arr.filter(i => i.status === 'pending').length;
-  const done = (arr) => arr.filter(i => i.status !== 'pending').length;
-
-  ['posts', 'landings', 'emails', 'competitors', 'seo', 'weekly', 'monthly'].forEach(type => {
+  ['posts','landings','emails','competitors','seo','weekly','monthly'].forEach(type => {
     const el = document.getElementById(`count-${type}`);
     if (!el) return;
-    const p = pending(data[type]);
-    const d = done(data[type]);
+    const arr = data[type] || [];
+    const p = arr.filter(i => i.status === 'pending').length;
+    const d = arr.filter(i => i.status !== 'pending').length;
     el.textContent = p > 0 ? p : (d > 0 ? d : '');
     el.className = 'count' + (p === 0 && d > 0 ? ' done' : '');
     el.style.display = (p === 0 && d === 0) ? 'none' : 'inline-block';
@@ -376,7 +402,7 @@ function getStatusBadge(status) {
     pending:  ['status-pending',  '⏳ Новое'],
     approved: ['status-approved', '✓ Одобрено'],
     rejected: ['status-rejected', '✗ Отклонено'],
-    edited:   ['status-edited',   '✏️ Отредактировано'],
+    edited:   ['status-edited',   '✏️ Исправлено'],
     read:     ['status-read',     '✓ Прочитано'],
   };
   const [cls, label] = map[status] || ['status-pending', status];
@@ -387,40 +413,57 @@ function getStatusBadge(status) {
 function renderPosts() {
   const el = document.getElementById('posts-list');
   if (!data.posts.length) {
-    el.innerHTML = '<div class="empty"><h3>Постов нет</h3><p>Агент добавит посты во вторник</p></div>';
-    return;
+    el.innerHTML = '<div class="empty"><h3>Постов нет</h3><p>Агент добавит посты во вторник в 9:00</p></div>';
+    updatePublishBar(); return;
   }
 
   el.innerHTML = data.posts.map((post, i) => {
     const isSelected = selectedPosts.has(i);
     const isPending = post.status === 'pending';
+    const itemId = post.id || ('post-' + i);
+    const postRevisions = revisions.filter(r => r.item_id === itemId);
+    const pendingRev = postRevisions.find(r => r.status === 'pending');
+    const resolvedRev = [...postRevisions].reverse().find(r => r.status === 'resolved');
+
     return `
-    <div class="card ${post.status !== 'pending' ? post.status : ''} ${isSelected ? 'selected' : ''}" id="card-post-${i}">
+    <div class="card ${!isPending ? post.status : ''} ${isSelected ? 'selected' : ''}" id="card-post-${i}">
       <div class="card-header">
-        <div style="display:flex;align-items:center;">
-          ${isPending ? `<input type="checkbox" class="post-checkbox" ${isSelected ? 'checked' : ''} onchange="togglePostSelect(${i}, this.checked)">` : ''}
+        <div style="display:flex;align-items:center;flex:1;">
+          ${isPending ? `<input type="checkbox" class="post-checkbox" ${isSelected ? 'checked' : ''} onchange="togglePostSelect(${i}, this.checked)" title="Выбрать для публикации">` : ''}
           <div>
-            <div class="card-title">Пост ${i + 1}</div>
+            <div class="card-title">Пост ${i + 1}${isSelected ? ' ✓' : ''}</div>
             <div class="card-meta">${post.date || ''} · LinkedIn</div>
           </div>
         </div>
         ${getStatusBadge(post.status)}
       </div>
       <div class="card-body">
-        <div class="post-text" id="text-post-${i}">${post.editedContent || post.content}</div>
+        <div class="post-text" id="text-post-${i}">${post.editedContent || post.content || ''}</div>
       </div>
       <div class="actions">
         ${isPending ? `
-          <button class="btn btn-edit" onclick="startEdit('post', ${i})">✏️ Редактировать</button>
-          <button class="btn btn-save" id="save-post-${i}" onclick="saveEdit('posts', ${i})">Сохранить</button>
+          <button class="btn btn-edit" onclick="startEdit('post', ${i})">✏️ Редактировать вручную</button>
+          <button class="btn btn-save" id="save-post-${i}" onclick="saveEdit('posts', ${i})">💾 Сохранить</button>
           <button class="btn btn-reject" onclick="reject('posts', ${i})">Отклонить</button>
         ` : `
-          <button class="btn btn-copy" onclick="copyText('post', ${i})">📋 Скопировать</button>
-          ${post.status !== 'rejected' ? `<button class="btn btn-edit" onclick="undoApproval('posts', ${i})">Изменить решение</button>` : ''}
+          <button class="btn btn-copy" onclick="copyText('post', ${i})">📋 Скопировать текст</button>
+          ${post.status !== 'rejected' ? `<button class="btn btn-edit" style="font-size:12px;" onclick="undoApproval('posts', ${i})">Отменить решение</button>` : ''}
         `}
       </div>
-    </div>
-  `}).join('');
+
+      <!-- КОММЕНТАРИЙ ДЛЯ ПРАВКИ -->
+      <div class="revision-block">
+        <div class="revision-title">✏️ Попросить агента исправить этот пост</div>
+        ${pendingRev ? `
+          <div class="revision-pending">⏳ Правка в работе: «${escHtml(pendingRev.comment)}»</div>
+        ` : `
+          ${resolvedRev ? `<div class="revision-done">✅ Последняя правка внесена — проверь текст выше</div>` : ''}
+          <textarea id="rev-post-${i}" placeholder="Например: сделай тон менее формальным, добавь акцент на контроле доступа, убери третий абзац..."></textarea>
+          <br><button class="btn-revision" onclick="submitRevision('posts', ${i}, '${itemId}')">📨 Отправить на правку агенту</button>
+        `}
+      </div>
+    </div>`;
+  }).join('');
 
   updatePublishBar();
 }
@@ -428,8 +471,7 @@ function renderPosts() {
 function togglePostSelect(index, checked) {
   if (checked) selectedPosts.add(index);
   else selectedPosts.delete(index);
-  const card = document.getElementById(`card-post-${index}`);
-  if (card) card.classList.toggle('selected', checked);
+  document.getElementById(`card-post-${index}`)?.classList.toggle('selected', checked);
   updatePublishBar();
 }
 
@@ -438,14 +480,15 @@ function updatePublishBar() {
   const txt = document.getElementById('publish-bar-text');
   if (selectedPosts.size > 0) {
     bar.classList.add('visible');
-    txt.textContent = `Выбрано: ${selectedPosts.size} ${selectedPosts.size === 1 ? 'пост' : 'поста'}  (№ ${[...selectedPosts].map(i=>i+1).sort((a,b)=>a-b).join(', ')})`;
+    const nums = [...selectedPosts].map(i=>i+1).sort((a,b)=>a-b).join(', ');
+    txt.textContent = `Выбрано: ${selectedPosts.size} ${selectedPosts.size === 1 ? 'пост' : 'поста'} (№ ${nums})`;
   } else {
     bar.classList.remove('visible');
   }
 }
 
 async function publishSelected() {
-  if (selectedPosts.size === 0) return;
+  if (!selectedPosts.size) return;
   const indices = [...selectedPosts];
   try {
     await fetch('/publish-posts', {
@@ -454,11 +497,9 @@ async function publishSelected() {
       body: JSON.stringify({ selectedIndices: indices, posts: data.posts })
     });
     selectedPosts.clear();
-    showToast(`📢 Посты №${indices.map(i=>i+1).join(', ')} одобрены! Уведомление отправлено на почту.`);
+    showToast('✅ Готово! Яне отправлено письмо с текстами постов для публикации в LinkedIn.');
     await loadData();
-  } catch(e) {
-    showToast('Ошибка при публикации');
-  }
+  } catch(e) { showToast('Ошибка при отправке'); }
 }
 
 // ===== ЛЕНДИНГИ =====
@@ -471,16 +512,16 @@ function renderLandings() {
 
   el.innerHTML = data.landings.map((landing, i) => {
     const itemId = landing.id || ('landing-' + i);
-    const landingRevisions = revisions.filter(r => r.item_id === itemId);
-    const pendingRev = landingRevisions.find(r => r.status === 'pending');
-    const resolvedRev = landingRevisions.find(r => r.status === 'resolved');
+    const lRevisions = revisions.filter(r => r.item_id === itemId);
+    const pendingRev = lRevisions.find(r => r.status === 'pending');
+    const resolvedRev = [...lRevisions].reverse().find(r => r.status === 'resolved');
 
     return `
     <div class="card ${landing.status !== 'pending' ? landing.status : ''}" id="card-landing-${i}">
       <div class="card-header">
         <div>
-          <div class="card-title">${landing.title || 'Лендинг ' + (i+1)}</div>
-          <div class="card-meta">${landing.date || ''} · GitHub Pages</div>
+          <div class="card-title">${escHtml(landing.title || 'Лендинг ' + (i+1))}</div>
+          <div class="card-meta">${landing.date || ''}</div>
         </div>
         ${getStatusBadge(landing.status)}
       </div>
@@ -490,45 +531,33 @@ function renderLandings() {
       </div>
       <div class="actions">
         ${landing.status === 'pending' ? `
-          <button class="btn btn-approve" onclick="approve('landings', ${i})">✓ Одобрить</button>
+          <button class="btn btn-approve" onclick="approveLanding('landings', ${i}, '${itemId}')">✓ Одобрить → Яна опубликует</button>
           <button class="btn btn-reject" onclick="reject('landings', ${i})">Отклонить</button>
         ` : `
           ${landing.previewUrl ? `<a href="${landing.previewUrl}" target="_blank" class="btn btn-copy" style="text-decoration:none;">🔗 Открыть</a>` : ''}
-          <button class="btn btn-edit" onclick="undoApproval('landings', ${i})">Изменить решение</button>
+          <button class="btn btn-edit" style="font-size:12px;" onclick="undoApproval('landings', ${i})">Отменить решение</button>
         `}
       </div>
+
+      <!-- КОММЕНТАРИЙ ДЛЯ ПРАВКИ -->
       <div class="revision-block">
-        <div class="revision-label">✏️ Оставить комментарий для правки</div>
+        <div class="revision-title">✏️ Написать что исправить — агент внесёт правки сам</div>
         ${pendingRev ? `
-          <div class="revision-status">⏳ Правка ожидает обработки: "${pendingRev.comment}"</div>
-        ` : resolvedRev ? `
-          <div class="revision-status resolved">✅ Последняя правка внесена</div>
-          <textarea id="revision-${i}" placeholder="Написать новый комментарий для правки..."></textarea>
-          <br><button class="btn-revision" onclick="submitRevision(${i}, '${itemId}')">📨 Отправить на правку</button>
+          <div class="revision-pending">⏳ Правка в работе: «${escHtml(pendingRev.comment)}»<br><small>Агент пришлёт тебе письмо когда будет готово.</small></div>
         ` : `
-          <textarea id="revision-${i}" placeholder="Например: добавь акцент на контроле доступа в первый абзац, убери слово 'инновационный'..."></textarea>
-          <br><button class="btn-revision" onclick="submitRevision(${i}, '${itemId}')">📨 Отправить на правку</button>
+          ${resolvedRev ? `<div class="revision-done">✅ Последняя правка внесена — проверь текст выше, потом нажми «Одобрить»</div>` : ''}
+          <textarea id="rev-landing-${i}" placeholder="Например: добавь акцент на door access control, убери слово 'инновационный', сделай заголовок короче..."></textarea>
+          <br><button class="btn-revision" onclick="submitRevision('landings', ${i}, '${itemId}')">📨 Отправить на правку агенту</button>
         `}
       </div>
-    </div>
-  `}).join('');
+    </div>`;
+  }).join('');
 }
 
-async function submitRevision(index, itemId) {
-  const textarea = document.getElementById(`revision-${index}`);
-  const comment = textarea ? textarea.value.trim() : '';
-  if (!comment) { showToast('Напиши комментарий перед отправкой'); return; }
-  try {
-    await fetch('/request-revision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'landings', itemId, comment })
-    });
-    showToast('📨 Комментарий отправлен! Агент внесёт правки и пришлёт уведомление на почту.');
-    await loadData();
-  } catch(e) {
-    showToast('Ошибка отправки');
-  }
+// Одобрить лендинг — уведомить Яну
+async function approveLanding(type, index, itemId) {
+  await updateItem(type, index, { status: 'approved', approvedAt: new Date().toISOString() });
+  showToast('✅ Одобрено! Яне отправлено письмо — она опубликует лендинг.');
 }
 
 // ===== ПИСЬМА =====
@@ -538,60 +567,51 @@ function renderEmails() {
     el.innerHTML = '<div class="empty"><h3>Писем нет</h3><p>Агент добавит письма при необходимости</p></div>';
     return;
   }
-
   el.innerHTML = data.emails.map((email, i) => `
     <div class="card ${email.status !== 'pending' ? email.status : ''}" id="card-email-${i}">
       <div class="card-header">
         <div>
-          <div class="card-title">${email.subject || 'Письмо ' + (i+1)}</div>
+          <div class="card-title">${escHtml(email.subject || 'Письмо ' + (i+1))}</div>
           <div class="card-meta">${email.date || ''} · Email</div>
         </div>
         ${getStatusBadge(email.status)}
       </div>
       <div class="card-body">
-        <div class="post-text" id="text-email-${i}">${email.editedContent || email.content}</div>
+        <div class="post-text" id="text-email-${i}">${email.editedContent || email.content || ''}</div>
       </div>
       <div class="actions">
         ${email.status === 'pending' ? `
-          <button class="btn btn-approve" onclick="approve('emails', ${i})">✓ Отправить</button>
+          <button class="btn btn-approve" onclick="approve('emails', ${i})">✓ Одобрить</button>
           <button class="btn btn-edit" onclick="startEdit('email', ${i})">✏️ Редактировать</button>
-          <button class="btn btn-save" id="save-email-${i}" onclick="saveEdit('emails', ${i})">Сохранить и одобрить</button>
+          <button class="btn btn-save" id="save-email-${i}" onclick="saveEdit('emails', ${i})">💾 Сохранить</button>
           <button class="btn btn-reject" onclick="reject('emails', ${i})">Отклонить</button>
         ` : `
-          <button class="btn btn-edit" onclick="undoApproval('emails', ${i})">Изменить решение</button>
+          <button class="btn btn-edit" style="font-size:12px;" onclick="undoApproval('emails', ${i})">Отменить решение</button>
         `}
       </div>
     </div>
   `).join('');
 }
 
-// ===== ОТЧЁТЫ (конкуренты / SEO / недельный / месячный) =====
+// ===== ОТЧЁТЫ =====
 function renderReports(type, containerId, emptyTitle, emptyText) {
   const el = document.getElementById(containerId);
   const items = data[type] || [];
-  if (!items.length) {
-    el.innerHTML = `<div class="empty"><h3>${emptyTitle}</h3><p>${emptyText}</p></div>`;
-    return;
-  }
-
+  if (!items.length) { el.innerHTML = `<div class="empty"><h3>${emptyTitle}</h3><p>${emptyText}</p></div>`; return; }
   el.innerHTML = items.map((item, i) => `
     <div class="card ${item.status === 'read' ? 'read' : ''}" id="card-${type}-${i}">
       <div class="card-header">
         <div>
-          <div class="card-title">${item.title || (type + ' ' + (i+1))}</div>
+          <div class="card-title">${escHtml(item.title || (type + ' ' + (i+1)))}</div>
           <div class="card-meta">${item.date || ''}</div>
         </div>
         ${getStatusBadge(item.status)}
       </div>
       <div class="card-body">
         ${item.insights && item.insights.length ? `
-          <ul class="insight-list">
-            ${item.insights.map(ins => `<li>${ins}</li>`).join('')}
-          </ul>
+          <ul class="insight-list">${item.insights.map(ins => `<li>${escHtml(ins)}</li>`).join('')}</ul>
           ${item.content ? `<div class="report-text" style="margin-top:16px;">${item.content}</div>` : ''}
-        ` : `
-          <div class="report-text">${item.content || item.description || ''}</div>
-        `}
+        ` : `<div class="report-text">${item.content || item.description || ''}</div>`}
       </div>
       <div class="actions">
         ${item.status === 'pending' ? `
@@ -606,10 +626,9 @@ function renderReports(type, containerId, emptyTitle, emptyText) {
 }
 
 // ===== ДЕЙСТВИЯ =====
-
 async function approve(type, index) {
   await updateItem(type, index, { status: 'approved', approvedAt: new Date().toISOString() });
-  showToast('✓ Одобрено! Агент опубликует автоматически.');
+  showToast('✓ Одобрено!');
 }
 
 async function reject(type, index) {
@@ -624,22 +643,20 @@ async function markRead(type, index) {
 
 function startEdit(type, index) {
   const el = document.getElementById(`text-${type}-${index}`);
-  el.contentEditable = 'true';
-  el.focus();
+  if (el) { el.contentEditable = 'true'; el.focus(); }
   const saveBtn = document.getElementById(`save-${type}-${index}`);
   if (saveBtn) saveBtn.style.display = 'inline-block';
 }
 
 async function saveEdit(type, index) {
-  const el = document.getElementById(`text-${type.slice(0,-1)}-${index}`);
+  const key = type.slice(0,-1);
+  const el = document.getElementById(`text-${key}-${index}`);
   const edited = el ? el.innerText : '';
   if (el) el.contentEditable = 'false';
-  await updateItem(type, index, {
-    status: 'edited',
-    editedContent: edited,
-    approvedAt: new Date().toISOString()
-  });
-  showToast('✏️ Отредактировано и одобрено!');
+  const saveBtn = document.getElementById(`save-${key}-${index}`);
+  if (saveBtn) saveBtn.style.display = 'none';
+  await updateItem(type, index, { status: 'edited', editedContent: edited, approvedAt: new Date().toISOString() });
+  showToast('✏️ Изменения сохранены!');
 }
 
 async function undoApproval(type, index) {
@@ -649,12 +666,27 @@ async function undoApproval(type, index) {
 
 function copyText(type, index) {
   const el = document.getElementById(`text-${type}-${index}`);
-  if (el) {
-    navigator.clipboard.writeText(el.innerText);
-    showToast('📋 Скопировано! Вставь в LinkedIn.');
-  }
+  if (el) { navigator.clipboard.writeText(el.innerText); showToast('📋 Скопировано!'); }
 }
 
+// ===== ПРАВКИ =====
+async function submitRevision(type, index, itemId) {
+  const textarea = document.getElementById(`rev-${type === 'posts' ? 'post' : 'landing'}-${index}`);
+  const comment = textarea?.value.trim();
+  if (!comment) { showToast('Напиши комментарий перед отправкой'); return; }
+  try {
+    await fetch('/request-revision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, itemId, comment })
+    });
+    showToast('📨 Отправлено! Агент внесёт правки и пришлёт тебе письмо.');
+    textarea.value = '';
+    await loadData();
+  } catch(e) { showToast('Ошибка отправки'); }
+}
+
+// ===== ОБЩЕЕ =====
 async function updateItem(type, index, changes) {
   await fetch('/approve', {
     method: 'POST',
@@ -665,19 +697,22 @@ async function updateItem(type, index, changes) {
 }
 
 function switchTab(tab) {
-  const tabs = ['posts', 'landings', 'emails', 'competitors', 'seo', 'weekly', 'monthly'];
-  document.querySelectorAll('.tab').forEach((t, i) => {
-    t.classList.toggle('active', tabs[i] === tab);
-  });
+  const tabs = ['posts','landings','emails','competitors','seo','weekly','monthly'];
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', tabs[i] === tab));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.getElementById(`section-${tab}`).classList.add('active');
+  document.getElementById(`section-${tab}`)?.classList.add('active');
 }
 
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 loadData();
