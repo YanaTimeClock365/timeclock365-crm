@@ -49,6 +49,18 @@ async function initDB() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS revisions (
+      id SERIAL PRIMARY KEY,
+      type TEXT NOT NULL,
+      item_id TEXT,
+      comment TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT NOW(),
+      resolved_at TIMESTAMP
+    )
+  `);
+
   console.log('✓ База данных инициализирована');
 }
 
@@ -309,6 +321,165 @@ const server = http.createServer(async (req, res) => {
           sendApprovalNotification(type, item);
         }
         res.writeHead(200); res.end(JSON.stringify({ ok: true, added }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+
+  // GET /revisions — список правок лендингов
+  } else if (req.method === 'GET' && req.url === '/revisions') {
+    try {
+      const { rows } = await pool.query('SELECT * FROM revisions ORDER BY created_at DESC');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(rows));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+
+  // POST /request-revision — запрос правки от пользователя
+  } else if (req.method === 'POST' && req.url === '/request-revision') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { type, itemId, comment } = JSON.parse(body);
+        await pool.query(
+          'INSERT INTO revisions (type, item_id, comment, status) VALUES ($1, $2, $3, $4)',
+          [type, itemId, comment, 'pending']
+        );
+        // Уведомление по email
+        await transporter.sendMail({
+          from: `"TimeClock 365" <${config.GMAIL_USER}>`,
+          to: [config.OWNER_EMAIL, config.VIKA_EMAIL].filter(Boolean).join(','),
+          subject: `[TimeClock 365] Запрос правки: ${type}`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;">
+              <div style="background:#FF981B;padding:16px 24px;border-radius:8px 8px 0 0;">
+                <h2 style="color:#fff;margin:0;">✏️ Запрос правки</h2>
+              </div>
+              <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
+                <p><strong>Тип:</strong> ${type}</p>
+                <p><strong>Элемент:</strong> ${itemId}</p>
+                <div style="background:#fffbf0;border-left:4px solid #FF981B;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
+                  <strong>Комментарий:</strong><br>${comment}
+                </div>
+                <p style="color:#888;font-size:13px;">Агент обработает правку автоматически в течение часа.</p>
+                <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
+                  Открыть согласование →
+                </a>
+              </div>
+            </div>
+          `,
+        });
+        console.log(`+ Правка: ${type} "${itemId}" — "${comment.slice(0,50)}"`);
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+
+  // POST /revision-done — агент завершил правку
+  } else if (req.method === 'POST' && req.url === '/revision-done') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { revisionId, summary, type, itemId, newContent } = JSON.parse(body);
+        await pool.query(
+          'UPDATE revisions SET status = $1, resolved_at = NOW() WHERE id = $2',
+          ['resolved', revisionId]
+        );
+        // Обновить контент в approvals если передан
+        if (newContent && type && itemId) {
+          const { rows } = await pool.query('SELECT * FROM approvals WHERE item_id = $1', [itemId]);
+          if (rows[0]) {
+            const updatedData = { ...rows[0].data, editedContent: newContent };
+            await pool.query(
+              'UPDATE approvals SET data = $1, status = $2 WHERE item_id = $3',
+              [JSON.stringify(updatedData), 'edited', itemId]
+            );
+          }
+        }
+        // Уведомление о завершении правки
+        await transporter.sendMail({
+          from: `"TimeClock 365" <${config.GMAIL_USER}>`,
+          to: [config.OWNER_EMAIL, config.VIKA_EMAIL].filter(Boolean).join(','),
+          subject: `[TimeClock 365] ✅ Правка внесена: ${type}`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;">
+              <div style="background:#12B76A;padding:16px 24px;border-radius:8px 8px 0 0;">
+                <h2 style="color:#fff;margin:0;">✅ Правка внесена</h2>
+              </div>
+              <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
+                <p><strong>Тип:</strong> ${type}</p>
+                <p><strong>Элемент:</strong> ${itemId}</p>
+                <div style="background:#f0faf5;border-left:4px solid #12B76A;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
+                  <strong>Что изменено:</strong><br>${summary}
+                </div>
+                <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
+                  Посмотреть результат →
+                </a>
+              </div>
+            </div>
+          `,
+        });
+        console.log(`✓ Правка завершена: ${type} "${itemId}"`);
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+
+  // POST /publish-posts — уведомление о выбранных постах
+  } else if (req.method === 'POST' && req.url === '/publish-posts') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { selectedIndices, posts } = JSON.parse(body);
+        const selectedPosts = selectedIndices.map((i, n) => `
+          <div style="background:#f5f7fa;border-left:4px solid #3479E9;padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:12px;">
+            <strong>Пост ${i + 1}</strong><br>
+            <span style="color:#555;font-size:13px;">${(posts[i]?.content || '').slice(0, 200)}...</span>
+          </div>
+        `).join('');
+
+        // Обновить статус выбранных постов в DB
+        for (const idx of selectedIndices) {
+          const { rows } = await pool.query(
+            'SELECT * FROM approvals WHERE type = $1 ORDER BY created_at ASC', ['posts']
+          );
+          if (rows[idx]) {
+            const updatedData = { ...rows[idx].data, approvedAt: new Date().toISOString() };
+            await pool.query(
+              'UPDATE approvals SET status = $1, data = $2 WHERE id = $3',
+              ['approved', JSON.stringify(updatedData), rows[idx].id]
+            );
+          }
+        }
+
+        await transporter.sendMail({
+          from: `"TimeClock 365" <${config.GMAIL_USER}>`,
+          to: [config.OWNER_EMAIL, config.VIKA_EMAIL].filter(Boolean).join(','),
+          subject: `[TimeClock 365] 📢 Посты выбраны для публикации`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;">
+              <div style="background:#3479E9;padding:16px 24px;border-radius:8px 8px 0 0;">
+                <h2 style="color:#fff;margin:0;">📢 Посты выбраны для публикации</h2>
+              </div>
+              <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
+                <p>Выбрано постов: <strong>${selectedIndices.length}</strong> (№ ${selectedIndices.map(i => i+1).join(', ')})</p>
+                ${selectedPosts}
+                <p style="color:#888;font-size:13px;">Скопируй текст выбранных постов и опубликуй в LinkedIn.</p>
+                <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
+                  Открыть посты →
+                </a>
+              </div>
+            </div>
+          `,
+        });
+        console.log(`📢 Выбрано постов: ${selectedIndices.length} (${selectedIndices.map(i=>i+1).join(', ')})`);
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
       } catch(e) {
         res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
       }

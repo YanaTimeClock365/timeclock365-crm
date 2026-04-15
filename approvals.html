@@ -177,6 +177,60 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
   margin-top: 6px;
 }
 
+/* Publish bar */
+.publish-bar {
+  background: #3479E9;
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.publish-bar.visible { display: flex; }
+.publish-bar span { font-size: 14px; font-weight: 600; }
+.btn-publish { background: #fff; color: #3479E9; padding: 8px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; font-size: 14px; }
+.btn-publish:hover { background: #eef4ff; }
+
+/* Checkbox select */
+.post-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #3479E9; margin-right: 8px; }
+.card.selected { border-color: #3479E9; box-shadow: 0 0 0 2px rgba(52,121,233,0.2); }
+
+/* Revision block */
+.revision-block {
+  border-top: 1px solid #f0f0f0;
+  padding: 16px 20px;
+  background: #fafafa;
+}
+.revision-block textarea {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: Arial, sans-serif;
+  resize: vertical;
+  min-height: 80px;
+  margin-top: 8px;
+  outline: none;
+}
+.revision-block textarea:focus { border-color: #3479E9; }
+.revision-label { font-size: 13px; color: #666; font-weight: 600; }
+.btn-revision { background: #FF981B; color: #fff; padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 13px; margin-top: 8px; }
+.btn-revision:hover { opacity: 0.85; }
+.revision-status {
+  font-size: 12px;
+  padding: 6px 12px;
+  background: #fffbf0;
+  border: 1px solid #FFD099;
+  border-radius: 6px;
+  color: #E87A00;
+  margin-top: 8px;
+}
+.revision-status.resolved { background: #f0faf5; border-color: #b2e8cc; color: #12B76A; }
+
 /* Insight list */
 .insight-list { list-style: none; padding: 0; }
 .insight-list li {
@@ -228,6 +282,10 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
 
   <!-- ПОСТЫ -->
   <div id="section-posts" class="section active">
+    <div class="publish-bar" id="publish-bar">
+      <span id="publish-bar-text">Выбрано: 0 постов</span>
+      <button class="btn-publish" onclick="publishSelected()">📢 Опубликовать выбранные</button>
+    </div>
     <div id="posts-list"></div>
   </div>
 
@@ -267,12 +325,17 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
 
 <script>
 let data = { posts: [], landings: [], emails: [], competitors: [], seo: [], weekly: [], monthly: [] };
+let revisions = [];
+let selectedPosts = new Set();
 
 async function loadData() {
   try {
-    const res = await fetch('/approvals');
-    data = await res.json();
-    // Ensure all arrays exist
+    const [appRes, revRes] = await Promise.all([
+      fetch('/approvals'),
+      fetch('/revisions')
+    ]);
+    data = await appRes.json();
+    revisions = await revRes.json();
     ['posts','landings','emails','competitors','seo','weekly','monthly'].forEach(k => {
       if (!data[k]) data[k] = [];
     });
@@ -324,16 +387,22 @@ function getStatusBadge(status) {
 function renderPosts() {
   const el = document.getElementById('posts-list');
   if (!data.posts.length) {
-    el.innerHTML = '<div class="empty"><h3>Постов нет</h3><p>Агент добавит посты в понедельник</p></div>';
+    el.innerHTML = '<div class="empty"><h3>Постов нет</h3><p>Агент добавит посты во вторник</p></div>';
     return;
   }
 
-  el.innerHTML = data.posts.map((post, i) => `
-    <div class="card ${post.status !== 'pending' ? post.status : ''}" id="card-post-${i}">
+  el.innerHTML = data.posts.map((post, i) => {
+    const isSelected = selectedPosts.has(i);
+    const isPending = post.status === 'pending';
+    return `
+    <div class="card ${post.status !== 'pending' ? post.status : ''} ${isSelected ? 'selected' : ''}" id="card-post-${i}">
       <div class="card-header">
-        <div>
-          <div class="card-title">Пост ${i + 1}</div>
-          <div class="card-meta">${post.date || ''} · LinkedIn</div>
+        <div style="display:flex;align-items:center;">
+          ${isPending ? `<input type="checkbox" class="post-checkbox" ${isSelected ? 'checked' : ''} onchange="togglePostSelect(${i}, this.checked)">` : ''}
+          <div>
+            <div class="card-title">Пост ${i + 1}</div>
+            <div class="card-meta">${post.date || ''} · LinkedIn</div>
+          </div>
         </div>
         ${getStatusBadge(post.status)}
       </div>
@@ -341,10 +410,9 @@ function renderPosts() {
         <div class="post-text" id="text-post-${i}">${post.editedContent || post.content}</div>
       </div>
       <div class="actions">
-        ${post.status === 'pending' ? `
-          <button class="btn btn-approve" onclick="approve('posts', ${i})">✓ Одобрить</button>
+        ${isPending ? `
           <button class="btn btn-edit" onclick="startEdit('post', ${i})">✏️ Редактировать</button>
-          <button class="btn btn-save" id="save-post-${i}" onclick="saveEdit('posts', ${i})">Сохранить и одобрить</button>
+          <button class="btn btn-save" id="save-post-${i}" onclick="saveEdit('posts', ${i})">Сохранить</button>
           <button class="btn btn-reject" onclick="reject('posts', ${i})">Отклонить</button>
         ` : `
           <button class="btn btn-copy" onclick="copyText('post', ${i})">📋 Скопировать</button>
@@ -352,7 +420,45 @@ function renderPosts() {
         `}
       </div>
     </div>
-  `).join('');
+  `}).join('');
+
+  updatePublishBar();
+}
+
+function togglePostSelect(index, checked) {
+  if (checked) selectedPosts.add(index);
+  else selectedPosts.delete(index);
+  const card = document.getElementById(`card-post-${index}`);
+  if (card) card.classList.toggle('selected', checked);
+  updatePublishBar();
+}
+
+function updatePublishBar() {
+  const bar = document.getElementById('publish-bar');
+  const txt = document.getElementById('publish-bar-text');
+  if (selectedPosts.size > 0) {
+    bar.classList.add('visible');
+    txt.textContent = `Выбрано: ${selectedPosts.size} ${selectedPosts.size === 1 ? 'пост' : 'поста'}  (№ ${[...selectedPosts].map(i=>i+1).sort((a,b)=>a-b).join(', ')})`;
+  } else {
+    bar.classList.remove('visible');
+  }
+}
+
+async function publishSelected() {
+  if (selectedPosts.size === 0) return;
+  const indices = [...selectedPosts];
+  try {
+    await fetch('/publish-posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedIndices: indices, posts: data.posts })
+    });
+    selectedPosts.clear();
+    showToast(`📢 Посты №${indices.map(i=>i+1).join(', ')} одобрены! Уведомление отправлено на почту.`);
+    await loadData();
+  } catch(e) {
+    showToast('Ошибка при публикации');
+  }
 }
 
 // ===== ЛЕНДИНГИ =====
@@ -363,7 +469,13 @@ function renderLandings() {
     return;
   }
 
-  el.innerHTML = data.landings.map((landing, i) => `
+  el.innerHTML = data.landings.map((landing, i) => {
+    const itemId = landing.id || ('landing-' + i);
+    const landingRevisions = revisions.filter(r => r.item_id === itemId);
+    const pendingRev = landingRevisions.find(r => r.status === 'pending');
+    const resolvedRev = landingRevisions.find(r => r.status === 'resolved');
+
+    return `
     <div class="card ${landing.status !== 'pending' ? landing.status : ''}" id="card-landing-${i}">
       <div class="card-header">
         <div>
@@ -373,20 +485,50 @@ function renderLandings() {
         ${getStatusBadge(landing.status)}
       </div>
       <div class="card-body">
-        <div class="post-text" id="text-landing-${i}">${landing.description || ''}</div>
+        <div class="post-text" id="text-landing-${i}">${landing.editedContent || landing.description || ''}</div>
         ${landing.previewUrl ? `<a class="landing-url" href="${landing.previewUrl}" target="_blank">🔗 ${landing.previewUrl}</a>` : ''}
       </div>
       <div class="actions">
         ${landing.status === 'pending' ? `
-          <button class="btn btn-approve" onclick="approve('landings', ${i})">✓ Опубликовать</button>
+          <button class="btn btn-approve" onclick="approve('landings', ${i})">✓ Одобрить</button>
           <button class="btn btn-reject" onclick="reject('landings', ${i})">Отклонить</button>
         ` : `
           ${landing.previewUrl ? `<a href="${landing.previewUrl}" target="_blank" class="btn btn-copy" style="text-decoration:none;">🔗 Открыть</a>` : ''}
           <button class="btn btn-edit" onclick="undoApproval('landings', ${i})">Изменить решение</button>
         `}
       </div>
+      <div class="revision-block">
+        <div class="revision-label">✏️ Оставить комментарий для правки</div>
+        ${pendingRev ? `
+          <div class="revision-status">⏳ Правка ожидает обработки: "${pendingRev.comment}"</div>
+        ` : resolvedRev ? `
+          <div class="revision-status resolved">✅ Последняя правка внесена</div>
+          <textarea id="revision-${i}" placeholder="Написать новый комментарий для правки..."></textarea>
+          <br><button class="btn-revision" onclick="submitRevision(${i}, '${itemId}')">📨 Отправить на правку</button>
+        ` : `
+          <textarea id="revision-${i}" placeholder="Например: добавь акцент на контроле доступа в первый абзац, убери слово 'инновационный'..."></textarea>
+          <br><button class="btn-revision" onclick="submitRevision(${i}, '${itemId}')">📨 Отправить на правку</button>
+        `}
+      </div>
     </div>
-  `).join('');
+  `}).join('');
+}
+
+async function submitRevision(index, itemId) {
+  const textarea = document.getElementById(`revision-${index}`);
+  const comment = textarea ? textarea.value.trim() : '';
+  if (!comment) { showToast('Напиши комментарий перед отправкой'); return; }
+  try {
+    await fetch('/request-revision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'landings', itemId, comment })
+    });
+    showToast('📨 Комментарий отправлен! Агент внесёт правки и пришлёт уведомление на почту.');
+    await loadData();
+  } catch(e) {
+    showToast('Ошибка отправки');
+  }
 }
 
 // ===== ПИСЬМА =====
