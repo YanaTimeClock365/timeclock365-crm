@@ -7,9 +7,12 @@ const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
 const { Pool } = require('pg');
+const Anthropic = require('@anthropic-ai/sdk');
 
 const config = require('./config');
 const emails = require('./emails');
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ===================================
 // БАЗА ДАННЫХ — PostgreSQL
@@ -66,6 +69,8 @@ async function initDB() {
   // Добавляем новые колонки если их нет (safe migration)
   await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS original_content TEXT`);
   await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS summary TEXT`);
+  // status can now be: pending | processing | resolved | failed
+  await pool.query(`ALTER TABLE approvals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`);
 
   console.log('✓ База данных инициализирована');
 }
@@ -187,6 +192,120 @@ async function sendApprovalNotification(type, item) {
     });
   } catch (err) {
     console.error('Ошибка уведомления:', err.message);
+  }
+}
+
+// ===================================
+// НЕМЕДЛЕННАЯ ОБРАБОТКА ПРАВОК (AI inline)
+// ===================================
+
+async function processRevisionImmediately(revisionId, type, itemId, comment, originalContent) {
+  try {
+    console.log(`🔄 Processing revision ${revisionId} (${type} "${itemId}") ...`);
+    await pool.query('UPDATE revisions SET status = $1 WHERE id = $2', ['processing', revisionId]);
+
+    // Получить текущий контент из approvals
+    let content = originalContent || '';
+    if (!content) {
+      const r = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
+      if (r.rows[0]) {
+        const d = r.rows[0].data;
+        content = d.editedContent || d.content || d.description || '';
+      }
+    }
+
+    if (!content) {
+      console.warn(`⚠ Revision ${revisionId}: no content found for "${itemId}"`);
+      await pool.query('UPDATE revisions SET status = $1 WHERE id = $2', ['failed', revisionId]);
+      return;
+    }
+
+    // Формируем промпт под тип контента
+    const typeLabel = type === 'landings' ? 'landing page copy' : type === 'posts' ? 'LinkedIn post' : 'content';
+    const prompt = `You are a marketing copywriter for TimeClock 365 — a B2B SaaS that combines door access control and time tracking in one system. Target audience: HR Managers, Operations Directors, CEOs at manufacturing and engineering companies (50-500 employees). Brand voice: clear, practical, direct — no buzzwords, no "game-changer".
+
+Your task: revise the ${typeLabel} below based on this feedback from the content manager:
+
+FEEDBACK: "${comment}"
+
+CURRENT CONTENT:
+${content}
+
+Rules:
+- Return ONLY the revised content, no explanation, no preamble
+- Keep the same structure/format as the original
+- Preserve all links and HTML if present
+- Apply only the changes requested in the feedback`;
+
+    const message = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    const newContent = message.content[0].text.trim();
+
+    // Краткое описание изменений
+    const summaryMsg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 150,
+      messages: [{ role: 'user', content: `In one concise sentence (max 20 words), describe what was changed based on this feedback: "${comment}"` }]
+    });
+    const summary = summaryMsg.content[0].text.trim();
+
+    // Сохранить результат в revisions
+    await pool.query(
+      'UPDATE revisions SET status = $1, resolved_at = NOW(), summary = $2 WHERE id = $3',
+      ['resolved', summary, revisionId]
+    );
+
+    // Обновить контент в approvals
+    const approvalRows = await pool.query('SELECT * FROM approvals WHERE item_id = $1', [itemId]);
+    if (approvalRows.rows[0]) {
+      const updatedData = { ...approvalRows.rows[0].data, editedContent: newContent };
+      await pool.query(
+        'UPDATE approvals SET data = $1, status = $2, updated_at = NOW() WHERE item_id = $3',
+        [JSON.stringify(updatedData), 'edited', itemId]
+      );
+    }
+
+    // Email Вике — правки готовы
+    if (config.VIKA_EMAIL) {
+      try {
+        await transporter.sendMail({
+          from: `"TimeClock 365" <${config.GMAIL_USER}>`,
+          to: config.VIKA_EMAIL,
+          subject: `[TimeClock 365] ✅ Agent revised "${itemId}" — please review`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;">
+              <div style="background:#12B76A;padding:16px 24px;border-radius:8px 8px 0 0;">
+                <h2 style="color:#fff;margin:0;">✅ Revision complete</h2>
+              </div>
+              <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
+                <p>The agent revised <strong>${itemId}</strong> based on your comment.</p>
+                <div style="background:#fffbf0;border-left:4px solid #FF981B;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
+                  <strong>Your comment:</strong><br>${comment}
+                </div>
+                <div style="background:#f0faf5;border-left:4px solid #12B76A;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
+                  <strong>What changed:</strong><br>${summary}
+                </div>
+                <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;margin-top:8px;">
+                  Review & Approve →
+                </a>
+              </div>
+            </div>
+          `,
+        });
+      } catch(mailErr) {
+        console.error('Email error after revision:', mailErr.message);
+      }
+    }
+
+    console.log(`✓ Revision ${revisionId} complete: ${summary}`);
+  } catch (err) {
+    console.error(`✗ Revision ${revisionId} failed:`, err.message);
+    try {
+      await pool.query('UPDATE revisions SET status = $1 WHERE id = $2', ['failed', revisionId]);
+    } catch(e2) {}
   }
 }
 
@@ -360,37 +479,17 @@ const server = http.createServer(async (req, res) => {
           }
         } catch(e) {}
 
-        await pool.query(
-          'INSERT INTO revisions (type, item_id, comment, status, original_content) VALUES ($1, $2, $3, $4, $5)',
+        const ins = await pool.query(
+          'INSERT INTO revisions (type, item_id, comment, status, original_content) VALUES ($1, $2, $3, $4, $5) RETURNING id',
           [type, itemId, comment, 'pending', originalContent]
         );
-        // Подтверждение Вике что правка принята
-        if (config.VIKA_EMAIL) {
-          await transporter.sendMail({
-            from: `"TimeClock 365" <${config.GMAIL_USER}>`,
-            to: config.VIKA_EMAIL,
-            subject: `[TimeClock 365] ⏳ Правка принята — агент работает`,
-            html: `
-              <div style="font-family:Arial,sans-serif;max-width:600px;">
-                <div style="background:#FF981B;padding:16px 24px;border-radius:8px 8px 0 0;">
-                  <h2 style="color:#fff;margin:0;">✏️ Правка принята</h2>
-                </div>
-                <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
-                  <p>Агент получил твой комментарий и скоро внесёт правки.</p>
-                  <div style="background:#fffbf0;border-left:4px solid #FF981B;padding:14px;border-radius:0 6px 6px 0;margin:16px 0;">
-                    <strong>Твой комментарий:</strong><br>${comment}
-                  </div>
-                  <p style="color:#888;font-size:13px;">Как только агент внесёт изменения — ты получишь отдельное письмо с результатом.</p>
-                  <a href="${RAILWAY_URL}/approvals-page" style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
-                    Открыть согласование →
-                  </a>
-                </div>
-              </div>
-            `,
-          });
-        }
-        console.log(`+ Правка: ${type} "${itemId}" — "${comment.slice(0,50)}"`);
-        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+        const revisionId = ins.rows[0].id;
+        console.log(`+ Правка #${revisionId}: ${type} "${itemId}" — "${comment.slice(0,50)}"`);
+
+        // Немедленно запускаем обработку (в фоне, не ждём)
+        setImmediate(() => processRevisionImmediately(revisionId, type, itemId, comment, originalContent));
+
+        res.writeHead(200); res.end(JSON.stringify({ ok: true, revisionId, processing: true }));
       } catch(e) {
         res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
       }

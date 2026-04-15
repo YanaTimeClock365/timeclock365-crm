@@ -216,8 +216,12 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
 }
 .rev-block textarea:focus { border-color: #3479E9; }
 .btn-rev { background: #FF981B; color: #fff; padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 13px; margin-top: 8px; }
-.rev-pending { font-size: 12px; padding: 8px 12px; background: #fffbf0; border: 1px solid #FFD099; border-radius: 6px; color: #E87A00; }
-.rev-done    { font-size: 12px; padding: 10px 14px; background: #f0faf5; border: 1px solid #b2e8cc; border-radius: 6px; color: #12B76A; margin-bottom: 10px; }
+.rev-pending   { font-size: 12px; padding: 8px 12px; background: #fffbf0; border: 1px solid #FFD099; border-radius: 6px; color: #E87A00; }
+.rev-processing{ font-size: 12px; padding: 10px 14px; background: #EEF4FF; border: 1px solid #c5d8ff; border-radius: 6px; color: #3479E9; margin-bottom: 10px; display:flex; align-items:center; gap:8px; }
+.rev-failed    { font-size: 12px; padding: 8px 12px; background: #fff5f5; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; }
+.rev-done      { font-size: 12px; padding: 10px 14px; background: #f0faf5; border: 1px solid #b2e8cc; border-radius: 6px; color: #12B76A; margin-bottom: 10px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { display:inline-block; width:14px; height:14px; border:2px solid #c5d8ff; border-top-color:#3479E9; border-radius:50%; animation:spin 0.8s linear infinite; flex-shrink:0; }
 .diff-block  { margin-top: 10px; border-radius: 6px; overflow: hidden; font-size: 13px; }
 .diff-was    { background: #fff5f5; border-left: 3px solid #f87171; padding: 10px 14px; color: #666; line-height: 1.6; }
 .diff-now    { background: #f0faf5; border-left: 3px solid #12B76A; padding: 10px 14px; color: #333; line-height: 1.6; }
@@ -396,6 +400,47 @@ function statusBadge(s) {
   return `<span class="badge-status ${cls}">${lbl}</span>`;
 }
 
+function revBlock(revisions, itemId, type, idx) {
+  const pr = revisions.filter(r => r.item_id === itemId);
+  // Find the most recent active revision
+  const procRev = [...pr].reverse().find(r => r.status === 'processing');
+  const pendRev = [...pr].reverse().find(r => r.status === 'pending');
+  const failRev = [...pr].reverse().find(r => r.status === 'failed');
+  const doneRev = [...pr].reverse().find(r => r.status === 'resolved');
+
+  if (procRev || pendRev) {
+    const rev = procRev || pendRev;
+    return `
+      <div class="rev-processing">
+        <div class="spinner"></div>
+        <div><strong>🔄 Agent is revising now...</strong><br>
+        Comment: "<em>${esc(rev.comment)}</em>"<br>
+        <span style="font-size:11px;color:#666;margin-top:2px;display:block;">This page refreshes every 15 sec — the result will appear automatically</span></div>
+      </div>`;
+  }
+
+  let html = '';
+  if (failRev) {
+    html += `<div class="rev-failed">⚠️ Revision failed. Try submitting your comment again.</div>`;
+  }
+  if (doneRev) {
+    html += `
+      <div class="rev-done">
+        ✅ Agent revised this — see updated text above
+        ${doneRev.summary ? `<div style="margin-top:6px;font-weight:600;color:#0d6b3a;">What changed: ${esc(doneRev.summary)}</div>` : ''}
+      </div>
+      ${doneRev.original_content ? `<div class="diff-block">
+        <div class="diff-was"><div class="diff-label" style="color:#dc2626;">▼ BEFORE</div>${esc(doneRev.original_content.slice(0,400))}${doneRev.original_content.length>400?'…':''}</div>
+        <div class="diff-now"><div class="diff-label" style="color:#12B76A;">▲ AFTER — updated above</div>Comment: "<em>${esc(doneRev.comment)}</em>"</div>
+      </div>` : ''}`;
+  }
+  // textarea for new comment
+  html += `
+    <textarea id="rev-${type}-${idx}" placeholder="Leave a comment → agent revises immediately..."></textarea>
+    <br><button class="btn-rev" onclick="submitRev('${type}',${idx},'${itemId}')">📨 Send to agent</button>`;
+  return html;
+}
+
 // ── POSTS ─────────────────────────────────────────────
 function renderPosts() {
   const el = document.getElementById('posts-list');
@@ -411,9 +456,6 @@ function renderPosts() {
     const i = data.posts.indexOf(post);
     const sel = selectedPosts.has(i);
     const itemId = post.id||('post-'+i);
-    const pr = revisions.filter(r=>r.item_id===itemId);
-    const pendRev = pr.find(r=>r.status==='pending');
-    const doneRev = [...pr].reverse().find(r=>r.status==='resolved');
     return `
     <div class="card ${post.status!=='pending'?post.status:''} ${sel?'selected':''}" id="card-post-${i}">
       <div class="card-header">
@@ -433,19 +475,7 @@ function renderPosts() {
       </div>
       <div class="rev-block">
         <div class="rev-label">💬 Ask agent to rewrite this post</div>
-        ${pendRev
-          ? `<div class="rev-pending">⏳ Revision requested: "<em>${esc(pendRev.comment)}</em>" — agent is working on it</div>`
-          : `${doneRev ? `
-              <div class="rev-done">
-                ✅ Agent revised this post
-                ${doneRev.summary ? `<div style="margin-top:6px;font-weight:600;color:#0d6b3a;">What changed: ${esc(doneRev.summary)}</div>` : ''}
-              </div>
-              ${doneRev.original_content ? `<div class="diff-block">
-                <div class="diff-was"><div class="diff-label" style="color:#dc2626;">▼ BEFORE</div>${esc(doneRev.original_content.slice(0,300))}${doneRev.original_content.length>300?'…':''}</div>
-                <div class="diff-now"><div class="diff-label" style="color:#12B76A;">▲ AFTER — see updated text above</div>Comment: "<em>${esc(doneRev.comment)}</em>"</div>
-              </div>` : ''}` : ''}
-             <textarea id="rev-post-${i}" placeholder="e.g. make it shorter, emphasize door access control, add a question at the end..."></textarea>
-             <br><button class="btn-rev" onclick="submitRev('posts',${i},'${itemId}')">📨 Send to agent</button>`}
+        ${revBlock(revisions, itemId, 'posts', i)}
       </div>
     </div>`;
   }).join('');
@@ -469,9 +499,6 @@ function renderLandings() {
   const cards = active.map((landing, ri) => {
     const i = data.landings.indexOf(landing);
     const itemId = landing.id||('landing-'+i);
-    const lr = revisions.filter(r=>r.item_id===itemId);
-    const pendRev = lr.find(r=>r.status==='pending');
-    const doneRev = [...lr].reverse().find(r=>r.status==='resolved');
     return `
     <div class="card ${landing.status!=='pending'?landing.status:''}" id="card-landing-${i}">
       <div class="card-header">
@@ -488,19 +515,7 @@ function renderLandings() {
       </div>
       <div class="rev-block">
         <div class="rev-label">💬 Ask agent to revise this landing</div>
-        ${pendRev
-          ? `<div class="rev-pending">⏳ Revision requested: "<em>${esc(pendRev.comment)}</em>" — agent is working on it</div>`
-          : `${doneRev ? `
-              <div class="rev-done">
-                ✅ Agent revised this landing
-                ${doneRev.summary ? `<div style="margin-top:6px;font-weight:600;color:#0d6b3a;">What changed: ${esc(doneRev.summary)}</div>` : ''}
-              </div>
-              ${doneRev.original_content ? `<div class="diff-block">
-                <div class="diff-was"><div class="diff-label" style="color:#dc2626;">▼ BEFORE</div>${esc(doneRev.original_content.slice(0,400))}${doneRev.original_content.length>400?'…':''}</div>
-                <div class="diff-now"><div class="diff-label" style="color:#12B76A;">▲ AFTER — see updated text above</div>Comment: "<em>${esc(doneRev.comment)}</em>"</div>
-              </div>` : ''}` : ''}
-             <textarea id="rev-landing-${i}" placeholder="e.g. add focus on door access control in the first paragraph, remove word 'innovative', make headline shorter..."></textarea>
-             <br><button class="btn-rev" onclick="submitRev('landings',${i},'${itemId}')">📨 Send to agent</button>`}
+        ${revBlock(revisions, itemId, 'landings', i)}
       </div>
     </div>`;
   }).join('');
@@ -670,14 +685,25 @@ async function saveEdit(type,i) {
 }
 
 async function submitRev(type,index,itemId) {
-  const key = type==='posts'?'post':'landing';
-  const ta = document.getElementById(`rev-${key}-${index}`);
+  const ta = document.getElementById(`rev-${type}-${index}`);
   const comment = ta?.value.trim();
   if(!comment){showToast('Please write a comment first');return;}
+  // Immediately show processing state in the rev-block
+  const revBlockEl = ta?.closest('.rev-block');
+  if (revBlockEl) {
+    revBlockEl.innerHTML = `<div class="rev-label">💬 Ask agent to rewrite</div>
+      <div class="rev-processing">
+        <div class="spinner"></div>
+        <div><strong>🔄 Agent is revising now...</strong><br>
+        Comment: "<em>${esc(comment)}</em>"<br>
+        <span style="font-size:11px;color:#666;margin-top:2px;display:block;">Result will appear in a few seconds</span></div>
+      </div>`;
+  }
   await fetch('/request-revision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,itemId,comment})});
-  showToast('📨 Sent! Agent will revise and email you when done.');
-  if(ta) ta.value='';
-  await loadData();
+  showToast('🔄 Agent is working on it now...');
+  // Reload data after a short delay (API call takes ~5-10s)
+  setTimeout(() => loadData(), 8000);
+  setTimeout(() => loadData(), 15000);
 }
 
 async function updateItem(type,index,changes) {
