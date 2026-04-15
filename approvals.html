@@ -263,6 +263,53 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
 .empty { text-align: center; padding: 60px 20px; color: #888; }
 .empty h3 { font-size: 18px; margin-bottom: 8px; color: #555; }
 
+/* Publish tab */
+.publish-card {
+  background: #fff;
+  border: 2px solid #12B76A;
+  border-radius: 10px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.publish-card-header {
+  background: #f0faf5;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #d1f0e0;
+}
+.publish-card-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #12B76A; }
+.publish-card-title { font-weight: 700; font-size: 15px; color: #0d1117; margin-top: 2px; }
+.publish-card-body { padding: 20px; }
+.publish-preview {
+  background: #f9f9f9;
+  border-left: 3px solid #12B76A;
+  border-radius: 6px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: #333;
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.publish-actions {
+  padding: 16px 20px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid #e8f8ee;
+  background: #fafffe;
+  flex-wrap: wrap;
+}
+.btn-publish { background: #12B76A; color: #fff; padding: 10px 24px; border-radius: 7px; border: none; cursor: pointer; font-weight: 700; font-size: 14px; }
+.btn-publish:hover { background: #0ea05d; }
+.btn-copy { background: #EEF4FF; color: #3479E9; border: 1px solid #c5d8ff; padding: 10px 18px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btn-linkedin { background: #0A66C2; color: #fff; padding: 10px 18px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.publish-done { border-color: #ddd; opacity: 0.7; }
+.publish-done .publish-card-header { background: #f5f5f5; }
+
 .toast {
   position: fixed; bottom: 24px; right: 24px;
   background: #1C1C1D; color: #fff;
@@ -288,6 +335,7 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
   <div class="tab active" onclick="switchTab('posts')">📝 LinkedIn Posts <span class="badge" id="badge-posts"></span></div>
   <div class="tab" onclick="switchTab('landings')">🏗️ Landings <span class="badge" id="badge-landings"></span></div>
   <div class="tab" onclick="switchTab('emails')">✉️ Emails <span class="badge" id="badge-emails"></span></div>
+  <div class="tab" onclick="switchTab('publish')">🚀 Ready to Publish <span class="badge" id="badge-publish" style="background:#12B76A;"></span></div>
   <div class="tab" onclick="switchTab('reports')">📊 Reports <span class="badge" id="badge-reports"></span></div>
 </div>
 
@@ -321,6 +369,14 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
       When it looks good — click "Approve" and Yana will publish it to the website.
     </div>
     <div id="landings-list"></div>
+  </div>
+
+  <!-- READY TO PUBLISH -->
+  <div id="section-publish" class="section">
+    <div class="hint" style="background:#f0faf5;border-color:#b2e8cc;color:#0d6b3a;">
+      🚀 <strong>Ready to Publish:</strong> These posts and landings have been approved by Vika. Review and click Publish to go live.
+    </div>
+    <div id="publish-list"></div>
   </div>
 
   <!-- EMAILS -->
@@ -361,6 +417,7 @@ function renderAll() {
   renderPosts();
   renderLandings();
   renderEmails();
+  renderPublish();
   renderReport('competitors', 'competitors-list', 'No competitor analysis yet', 'Agent adds analysis every Monday at 9:00');
   renderReport('seo', 'seo-list', 'No SEO ideas yet', 'Agent adds ideas every Wednesday at 9:00');
   renderReport('weekly', 'weekly-list', 'No weekly report yet', 'Agent adds report every Friday at 17:00');
@@ -369,7 +426,7 @@ function renderAll() {
 }
 
 function pending(arr) { return arr.filter(i => i.status==='pending' || i.status==='edited').length; }
-function done(arr)    { return arr.filter(i => i.status==='approved'||i.status==='rejected'||i.status==='read').length; }
+function done(arr)    { return arr.filter(i => ['approved','rejected','read','published'].includes(i.status)).length; }
 
 function updateBadges() {
   const setBadge = (id, arr) => {
@@ -383,6 +440,12 @@ function updateBadges() {
   setBadge('badge-posts', data.posts);
   setBadge('badge-landings', data.landings);
   setBadge('badge-emails', data.emails);
+  // Publish badge = approved items not yet published
+  const readyPosts = (data.posts||[]).filter(p=>p.status==='approved').length;
+  const readyLandings = (data.landings||[]).filter(l=>l.status==='approved').length;
+  const readyTotal = readyPosts + readyLandings;
+  const pb = document.getElementById('badge-publish');
+  if(pb){ pb.textContent = readyTotal>0?readyTotal:''; pb.style.display=readyTotal>0?'inline-block':'none'; }
   // Reports badge = total pending across all report types
   const rp = pending(data.competitors)+pending(data.seo)+pending(data.weekly)+pending(data.monthly);
   const rd = done(data.competitors)+done(data.seo)+done(data.weekly)+done(data.monthly);
@@ -395,7 +458,7 @@ function updateBadges() {
 }
 
 function statusBadge(s) {
-  const m = { pending:['s-pending','⏳ New'], approved:['s-approved','✓ Approved'], rejected:['s-rejected','✗ Rejected'], edited:['s-edited','✏️ Revised'], read:['s-read','✓ Read'] };
+  const m = { pending:['s-pending','⏳ New'], approved:['s-approved','✓ Approved by Vika'], published:['s-approved','🚀 Published'], rejected:['s-rejected','✗ Rejected'], edited:['s-edited','✏️ Revised'], read:['s-read','✓ Read'] };
   const [cls,lbl] = m[s]||['s-pending',s];
   return `<span class="badge-status ${cls}">${lbl}</span>`;
 }
@@ -441,11 +504,113 @@ function revBlock(revisions, itemId, type, idx) {
   return html;
 }
 
+// ── READY TO PUBLISH ──────────────────────────────────
+function renderPublish() {
+  const el = document.getElementById('publish-list');
+  const approvedPosts    = (data.posts||[]).filter(p=>p.status==='approved');
+  const approvedLandings = (data.landings||[]).filter(l=>l.status==='approved');
+
+  if (!approvedPosts.length && !approvedLandings.length) {
+    el.innerHTML = `<div class="empty"><h3>Nothing ready to publish yet</h3><p>Once Vika approves a post or landing, it will appear here for final publishing.</p></div>`;
+    return;
+  }
+
+  const postCards = approvedPosts.map((post, ri) => {
+    const i = data.posts.indexOf(post);
+    const text = post.editedContent || post.content || '';
+    return `
+    <div class="publish-card" id="pub-post-${i}">
+      <div class="publish-card-header">
+        <div>
+          <div class="publish-card-type">LinkedIn Post</div>
+          <div class="publish-card-title">Post ${ri+1} · ${post.date||''}</div>
+        </div>
+        <span class="badge-status s-approved">✓ Approved by Vika</span>
+      </div>
+      <div class="publish-card-body">
+        <div class="publish-preview" id="pub-text-${i}">${esc(text)}</div>
+      </div>
+      <div class="publish-actions">
+        <button class="btn-publish" onclick="publishPost(${i})">🚀 Publish to LinkedIn</button>
+        <button class="btn-copy" onclick="copyText('pub-text-${i}')">📋 Copy text</button>
+        <a href="https://www.linkedin.com/feed/" target="_blank" class="btn-linkedin">in LinkedIn →</a>
+        <span style="font-size:12px;color:#888;margin-left:auto;">After publishing — click "Publish to LinkedIn" to mark as done</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  const landingCards = approvedLandings.map((landing, ri) => {
+    const i = data.landings.indexOf(landing);
+    const url = landing.previewUrl || '';
+    return `
+    <div class="publish-card" id="pub-landing-${i}">
+      <div class="publish-card-header">
+        <div>
+          <div class="publish-card-type">Landing Page</div>
+          <div class="publish-card-title">${esc(landing.title||'Landing '+(ri+1))} · ${landing.date||''}</div>
+        </div>
+        <span class="badge-status s-approved">✓ Approved by Vika</span>
+      </div>
+      <div class="publish-card-body">
+        ${url ? `
+          <div style="margin-bottom:14px;">
+            <a href="${url}" target="_blank" style="color:#3479E9;font-size:14px;font-weight:600;text-decoration:none;">🔗 ${url}</a>
+            <span style="color:#888;font-size:12px;margin-left:8px;">— open to preview</span>
+          </div>
+          <iframe src="${url}" style="width:100%;height:400px;border:1px solid #e0e0e0;border-radius:8px;" loading="lazy"></iframe>
+        ` : `<div class="publish-preview">${esc(landing.editedContent||landing.description||'')}</div>`}
+      </div>
+      <div class="publish-actions">
+        <button class="btn-publish" onclick="publishLanding(${i})">🚀 Confirm Published</button>
+        ${url ? `<a href="${url}" target="_blank" class="btn-linkedin" style="background:#3479E9;">🔗 Open live page</a>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = postCards + landingCards;
+}
+
+async function publishPost(index) {
+  const post = data.posts[index];
+  if (!post) return;
+  // Уведомить Яну и пометить как published
+  await fetch('/publish-posts', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ selectedIndices:[index], posts:data.posts })
+  });
+  // Пометить как published (новый статус)
+  await fetch('/approve', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ type:'posts', index, status:'published', approvedAt: new Date().toISOString() })
+  });
+  showToast('🚀 Published! Post text sent to Yana\'s email for LinkedIn.');
+  await loadData();
+}
+
+async function publishLanding(index) {
+  await fetch('/approve', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ type:'landings', index, status:'published', approvedAt: new Date().toISOString() })
+  });
+  showToast('✅ Landing marked as published!');
+  await loadData();
+}
+
+function copyText(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const text = el.innerText || el.textContent;
+  navigator.clipboard.writeText(text).then(() => showToast('📋 Text copied to clipboard!'));
+}
+
 // ── POSTS ─────────────────────────────────────────────
 function renderPosts() {
   const el = document.getElementById('posts-list');
   const active = data.posts.filter(p => p.status==='pending'||p.status==='edited');
-  const hist   = data.posts.filter(p => p.status==='approved'||p.status==='rejected');
+  const hist   = data.posts.filter(p => ['approved','rejected','published'].includes(p.status));
 
   if (!data.posts.length) {
     el.innerHTML = '<div class="empty"><h3>No posts yet</h3><p>Agent adds posts every Tuesday at 9:00</p></div>';
@@ -489,7 +654,7 @@ function renderPosts() {
 function renderLandings() {
   const el = document.getElementById('landings-list');
   const active = data.landings.filter(l => l.status==='pending'||l.status==='edited');
-  const hist   = data.landings.filter(l => l.status==='approved'||l.status==='rejected');
+  const hist   = data.landings.filter(l => ['approved','rejected','published'].includes(l.status));
 
   if (!data.landings.length) {
     el.innerHTML = '<div class="empty"><h3>No landings yet</h3><p>Agent adds landings every Monday</p></div>';
@@ -714,8 +879,9 @@ async function updateItem(type,index,changes) {
 
 // ── TABS ──────────────────────────────────────────────
 function switchTab(tab) {
-  ['posts','landings','emails','reports'].forEach(t => {
-    document.querySelectorAll('.tab')[['posts','landings','emails','reports'].indexOf(t)]?.classList.toggle('active', t===tab);
+  const allTabs = ['posts','landings','emails','publish','reports'];
+  allTabs.forEach((t,idx) => {
+    document.querySelectorAll('.tab')[idx]?.classList.toggle('active', t===tab);
     const s=document.getElementById('section-'+t);
     if(s) s.classList.toggle('active', t===tab);
   });
