@@ -382,6 +382,15 @@ function renderAll() {
   renderReports('weekly', 'weekly-list', 'Недельного отчёта нет', 'Агент добавит отчёт в пятницу');
   renderReports('monthly', 'monthly-list', 'Месячного отчёта нет', 'Агент добавит отчёт 1-го числа');
   updateCounts();
+  // Добавляем историю в конец каждой секции
+  [
+    ['posts','posts-list'], ['landings','landings-list'], ['emails','emails-list'],
+    ['competitors','competitors-list'], ['seo','seo-list'],
+    ['weekly','weekly-list'], ['monthly','monthly-list']
+  ].forEach(([type, listId]) => {
+    const hist = renderHistory(type, data[type] || []);
+    if (hist) document.getElementById(listId)?.insertAdjacentHTML('beforeend', hist);
+  });
 }
 
 function updateCounts() {
@@ -713,6 +722,54 @@ function showToast(msg) {
 function escHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ===== ИСТОРИЯ =====
+// Показывает в конце каждой вкладки старые одобренные/отклонённые элементы
+function renderHistory(type, items) {
+  const done = items.filter(i => i.status === 'approved' || i.status === 'rejected' || i.status === 'read');
+  if (!done.length) return '';
+
+  const grouped = {};
+  done.forEach(item => {
+    const week = item.date ? item.date.slice(0,7) : 'Старые';
+    if (!grouped[week]) grouped[week] = [];
+    grouped[week].push(item);
+  });
+
+  const sections = Object.entries(grouped).sort((a,b) => b[0].localeCompare(a[0])).map(([month, items]) => `
+    <div style="margin-bottom:8px;">
+      <div style="font-size:12px;color:#aaa;font-weight:600;padding:6px 0;text-transform:uppercase;letter-spacing:0.5px;">${month}</div>
+      ${items.map(item => `
+        <div style="background:#fff;border:1px solid #eee;border-radius:6px;padding:12px 16px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:600;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${escHtml(item.title || item.subject || (type + ' · ' + (item.date || '')))}
+            </div>
+            <div style="font-size:11px;color:#aaa;margin-top:2px;">${item.date || ''}</div>
+          </div>
+          ${getStatusBadge(item.status)}
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+
+  return `
+    <div style="margin-top:24px;">
+      <button onclick="toggleHistory(this)" style="background:none;border:none;cursor:pointer;color:#888;font-size:13px;padding:0;display:flex;align-items:center;gap:6px;margin-bottom:12px;">
+        <span class="hist-arrow">▶</span> История (${done.length} материалов)
+      </button>
+      <div class="hist-content" style="display:none;">${sections}</div>
+    </div>
+  `;
+}
+
+function toggleHistory(btn) {
+  const content = btn.nextElementSibling;
+  const arrow = btn.querySelector('.hist-arrow');
+  const isOpen = content.style.display !== 'none';
+  content.style.display = isOpen ? 'none' : 'block';
+  arrow.textContent = isOpen ? '▶' : '▼';
 }
 
 loadData();
