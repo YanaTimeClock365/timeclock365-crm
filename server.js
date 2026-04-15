@@ -286,7 +286,7 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { type, index, status, editedContent, approvedAt } = JSON.parse(body);
+        const { type, index, status, editedContent, approvedAt, previewUrl } = JSON.parse(body);
         const { rows } = await pool.query(
           'SELECT * FROM approvals WHERE type = $1 ORDER BY created_at ASC', [type]
         );
@@ -295,6 +295,7 @@ const server = http.createServer(async (req, res) => {
           const updatedData = { ...row.data };
           if (editedContent !== undefined) updatedData.editedContent = editedContent;
           if (approvedAt !== undefined) updatedData.approvedAt = approvedAt;
+          if (previewUrl !== undefined) updatedData.previewUrl = previewUrl;
           await pool.query(
             'UPDATE approvals SET status = $1, data = $2 WHERE id = $3',
             [status || row.status, JSON.stringify(updatedData), row.id]
