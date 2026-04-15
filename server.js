@@ -63,6 +63,10 @@ async function initDB() {
     )
   `);
 
+  // Добавляем новые колонки если их нет (safe migration)
+  await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS original_content TEXT`);
+  await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS summary TEXT`);
+
   console.log('✓ База данных инициализирована');
 }
 
