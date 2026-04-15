@@ -1,50 +1,70 @@
 // ===================================
 // TimeClock 365 — Email Automation
 // ===================================
-// Запуск: node server.js
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const nodemailer = require('nodemailer');
+const { Pool } = require('pg');
+
+const config = require('./config');
+const emails = require('./emails');
+
+// ===================================
+// БАЗА ДАННЫХ — PostgreSQL
 // ===================================
 
-const http = require('http');       // встроенный — создаёт сервер
-const fs = require('fs');           // встроенный — работа с файлами
-const path = require('path');       // встроенный — пути к файлам
-const nodemailer = require('nodemailer'); // для отправки email
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
 
-const config = require('./config'); // твои настройки (email, пароль)
-const emails = require('./emails'); // тексты писем
+// Создаём таблицы при старте
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS subscribers (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      source TEXT DEFAULT 'direct',
+      subscribed_at TIMESTAMP DEFAULT NOW(),
+      email1_sent TIMESTAMP,
+      email2_sent TIMESTAMP,
+      email3_sent TIMESTAMP,
+      completed BOOLEAN DEFAULT FALSE,
+      status TEXT DEFAULT 'Новый',
+      notes TEXT DEFAULT ''
+    )
+  `);
 
-// ===================================
-// БАЗА ДАННЫХ (простой JSON файл)
-// ===================================
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS approvals (
+      id SERIAL PRIMARY KEY,
+      type TEXT NOT NULL,
+      item_id TEXT UNIQUE,
+      data JSONB NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
 
-const DB_FILE = path.join(__dirname, 'subscribers.json');
-
-// Загружает список подписчиков из файла
-function loadSubscribers() {
-  if (!fs.existsSync(DB_FILE)) return [];
-  return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  console.log('✓ База данных инициализирована');
 }
 
-// Сохраняет список подписчиков в файл
-function saveSubscribers(subscribers) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(subscribers, null, 2));
-}
-
 // ===================================
-// ОТПРАВКА EMAIL через Gmail
+// ОТПРАВКА EMAIL
 // ===================================
 
-// Создаём "отправщик" с твоими Gmail данными
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: config.GMAIL_USER,
-    pass: config.GMAIL_APP_PASSWORD, // App Password, не обычный пароль!
+    pass: config.GMAIL_APP_PASSWORD,
   },
 });
 
-// Функция отправки одного письма
 async function sendEmail(to, name, emailNumber) {
-  // Берём нужное письмо из emails.js
   const emailData =
     emailNumber === 1 ? emails.email1(name) :
     emailNumber === 2 ? emails.email2(name) :
@@ -57,77 +77,62 @@ async function sendEmail(to, name, emailNumber) {
       subject: emailData.subject,
       html: emailData.html,
     });
-    console.log(`✓ Email ${emailNumber} отправлен → ${to}`);
+    console.log(`✓ Email ${emailNumber} → ${to}`);
     return true;
   } catch (err) {
-    console.error(`✗ Ошибка отправки Email ${emailNumber} → ${to}:`, err.message);
+    console.error(`✗ Email ${emailNumber} ошибка:`, err.message);
     return false;
   }
 }
 
 // ===================================
-// ПРОВЕРКА РАСПИСАНИЯ
-// Запускается каждые 15 минут
+// ПРОВЕРКА РАСПИСАНИЯ ПИСЕМ
 // ===================================
 
 async function checkAndSendEmails() {
-  const subscribers = loadSubscribers();
-  const now = Date.now();
-  let changed = false;
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM subscribers WHERE completed = FALSE'
+    );
+    const now = Date.now();
+    const dayInMs = 24 * 60 * 60 * 1000;
 
-  for (const sub of subscribers) {
-    // Пропускаем тех у кого цепочка завершена
-    if (sub.completed) continue;
+    for (const sub of rows) {
+      const subscribedAt = new Date(sub.subscribed_at).getTime();
 
-    const subscribedAt = new Date(sub.subscribedAt).getTime();
-    const dayInMs = 24 * 60 * 60 * 1000; // 1 день в миллисекундах
-
-    // EMAIL 1 — сразу после подписки (если ещё не отправлен)
-    if (!sub.email1Sent) {
-      const ok = await sendEmail(sub.email, sub.name, 1);
-      if (ok) {
-        sub.email1Sent = new Date().toISOString();
-        changed = true;
+      if (!sub.email1_sent) {
+        const ok = await sendEmail(sub.email, sub.name, 1);
+        if (ok) await pool.query(
+          'UPDATE subscribers SET email1_sent = NOW() WHERE id = $1', [sub.id]
+        );
+      } else if (!sub.email2_sent && now - subscribedAt >= dayInMs) {
+        const ok = await sendEmail(sub.email, sub.name, 2);
+        if (ok) await pool.query(
+          'UPDATE subscribers SET email2_sent = NOW() WHERE id = $1', [sub.id]
+        );
+      } else if (!sub.email3_sent && now - subscribedAt >= 3 * dayInMs) {
+        const ok = await sendEmail(sub.email, sub.name, 3);
+        if (ok) await pool.query(
+          'UPDATE subscribers SET email3_sent = NOW(), completed = TRUE WHERE id = $1', [sub.id]
+        );
       }
     }
-
-    // EMAIL 2 — через 1 день после подписки
-    else if (!sub.email2Sent && now - subscribedAt >= 1 * dayInMs) {
-      const ok = await sendEmail(sub.email, sub.name, 2);
-      if (ok) {
-        sub.email2Sent = new Date().toISOString();
-        changed = true;
-      }
-    }
-
-    // EMAIL 3 — через 3 дня после подписки
-    else if (!sub.email3Sent && now - subscribedAt >= 3 * dayInMs) {
-      const ok = await sendEmail(sub.email, sub.name, 3);
-      if (ok) {
-        sub.email3Sent = new Date().toISOString();
-        sub.completed = true; // цепочка завершена
-        changed = true;
-      }
-    }
+  } catch (err) {
+    console.error('Ошибка проверки расписания:', err.message);
   }
-
-  // Сохраняем только если что-то изменилось
-  if (changed) saveSubscribers(subscribers);
 }
 
 // ===================================
-// УВЕДОМЛЕНИЕ — новый элемент на согласование
+// УВЕДОМЛЕНИЕ — новое на согласование
 // ===================================
 
 const TYPE_LABELS = {
-  posts:       'LinkedIn пост',
-  landings:    'Лендинг',
-  emails:      'Письмо',
-  competitors: 'Анализ конкурентов',
-  seo:         'SEO идеи',
-  weekly:      'Недельный отчёт',
-  monthly:     'Месячный отчёт',
+  posts: 'LinkedIn пост', landings: 'Лендинг', emails: 'Письмо',
+  competitors: 'Анализ конкурентов', seo: 'SEO идеи',
+  weekly: 'Недельный отчёт', monthly: 'Месячный отчёт',
 };
+
+const RAILWAY_URL = 'https://timeclock365-crm-production.up.railway.app';
 
 async function sendApprovalNotification(type, item) {
   const label = TYPE_LABELS[type] || type;
@@ -140,31 +145,30 @@ async function sendApprovalNotification(type, item) {
   try {
     await transporter.sendMail({
       from: `"TimeClock 365" <${config.GMAIL_USER}>`,
-      to: config.OWNER_EMAIL,
+      to: [config.OWNER_EMAIL, config.VIKA_EMAIL].filter(Boolean).join(','),
       subject: `[TimeClock 365] Новое на согласование: ${label}`,
       html: `
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
           <div style="background:#3479E9;padding:16px 24px;border-radius:8px 8px 0 0;">
-            <h2 style="color:#fff;margin:0;font-size:18px;">TimeClock 365</h2>
+            <h2 style="color:#fff;margin:0;">TimeClock 365</h2>
           </div>
-          <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
-            <p style="color:#555;margin:0 0 16px;">Агент добавил новый элемент на согласование:</p>
+          <div style="background:#fff;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px;">
+            <p style="color:#555;">Агент добавил новый элемент на согласование:</p>
             <div style="background:#f5f7fa;border-left:4px solid #3479E9;padding:14px 18px;border-radius:0 6px 6px 0;margin-bottom:16px;">
-              <div style="font-weight:600;font-size:15px;color:#1C1C1D;">${title}</div>
+              <div style="font-weight:600;font-size:15px;">${title}</div>
               <div style="font-size:13px;color:#888;margin-top:4px;">${label} · ${item.date || new Date().toISOString().slice(0,10)}</div>
             </div>
             ${insightsHtml}
-            <a href="http://localhost:3000/approvals-page"
-               style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;font-size:14px;margin-top:8px;">
-              Открыть страницу согласования →
+            <a href="${RAILWAY_URL}/approvals-page"
+               style="display:inline-block;background:#3479E9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
+              Открыть согласование →
             </a>
           </div>
         </div>
       `,
     });
-    console.log(`✉ Уведомление отправлено → ${config.OWNER_EMAIL} (${label})`);
   } catch (err) {
-    console.error(`✗ Ошибка уведомления:`, err.message);
+    console.error('Ошибка уведомления:', err.message);
   }
 }
 
@@ -173,202 +177,145 @@ async function sendApprovalNotification(type, item) {
 // ===================================
 
 const server = http.createServer(async (req, res) => {
-
-  // Разрешаем запросы с любого домена (CORS)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
-  // Обработка preflight запроса от браузера
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
-    return;
-  }
+  if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
-  // ===================================
-  // POST /subscribe — добавить нового подписчика
-  // ===================================
-  if (req.method === 'POST' && req.url === '/subscribe') {
+  // GET / или /dashboard — CRM
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/dashboard')) {
+    const html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(html);
 
-    // Читаем данные из запроса
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', async () => {
-      try {
-        const { name, email } = JSON.parse(body);
-
-        // Проверяем что email и имя переданы
-        if (!email || !name) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Нужны name и email' }));
-          return;
-        }
-
-        // Загружаем текущий список
-        const subscribers = loadSubscribers();
-
-        // Проверяем — вдруг этот email уже есть
-        const exists = subscribers.find(s => s.email === email);
-        if (exists) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, message: 'Уже подписан' }));
-          return;
-        }
-
-        // Добавляем нового подписчика
-        const newSubscriber = {
-          name: name,
-          email: email,
-          subscribedAt: new Date().toISOString(), // когда подписался
-          email1Sent: null,   // когда отправлено письмо 1
-          email2Sent: null,   // когда отправлено письмо 2
-          email3Sent: null,   // когда отправлено письмо 3
-          completed: false    // завершена ли цепочка
-        };
-
-        subscribers.push(newSubscriber);
-        saveSubscribers(subscribers);
-
-        console.log(`+ Новый подписчик: ${name} (${email})`);
-
-        // Сразу запускаем проверку — Email 1 уйдёт немедленно
-        checkAndSendEmails();
-
-        // Отвечаем браузеру что всё ок
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, message: 'Подписка оформлена!' }));
-
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Ошибка сервера' }));
-      }
-    });
-
-  // ===================================
-  // GET /approvals — страница согласования
-  // ===================================
+  // GET /approvals-page
   } else if (req.method === 'GET' && req.url === '/approvals-page') {
     const html = fs.readFileSync(path.join(__dirname, 'approvals.html'), 'utf8');
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(html);
 
-  // ===================================
-  // GET /approvals — данные для согласования (JSON)
-  // ===================================
-  } else if (req.method === 'GET' && req.url === '/approvals') {
-    const APPROVALS_FILE = path.join(__dirname, 'approvals.json');
-    let approvals = { posts: [], landings: [], emails: [] };
-    try { approvals = JSON.parse(fs.readFileSync(APPROVALS_FILE, 'utf8')); } catch(e) {}
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(approvals, null, 2));
-
-  // ===================================
-  // POST /approve — обновить статус элемента
-  // ===================================
-  } else if (req.method === 'POST' && req.url === '/approve') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
-      try {
-        const { type, index, status, editedContent, approvedAt } = JSON.parse(body);
-        const APPROVALS_FILE = path.join(__dirname, 'approvals.json');
-        let approvals = { posts: [], landings: [], emails: [] };
-        try { approvals = JSON.parse(fs.readFileSync(APPROVALS_FILE, 'utf8')); } catch(e) {}
-
-        if (approvals[type] && approvals[type][index] !== undefined) {
-          if (status !== undefined) approvals[type][index].status = status;
-          if (editedContent !== undefined) approvals[type][index].editedContent = editedContent;
-          if (approvedAt !== undefined) approvals[type][index].approvedAt = approvedAt;
-          fs.writeFileSync(APPROVALS_FILE, JSON.stringify(approvals, null, 2));
-          console.log(`✓ ${type}[${index}] → ${status}`);
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
-      } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: 'Ошибка' }));
-      }
-    });
-
-  // ===================================
-  // POST /add-approval — агент добавляет элемент на согласование
-  // ===================================
-  } else if (req.method === 'POST' && req.url === '/add-approval') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
-      try {
-        const { type, item } = JSON.parse(body);
-        const APPROVALS_FILE = path.join(__dirname, 'approvals.json');
-        let approvals = { posts: [], landings: [], emails: [] };
-        try { approvals = JSON.parse(fs.readFileSync(APPROVALS_FILE, 'utf8')); } catch(e) {}
-
-        // Не добавляем дубликаты (проверяем по id)
-        const exists = (approvals[type] || []).find(i => i.id === item.id);
-        if (!exists) {
-          approvals[type] = approvals[type] || [];
-          approvals[type].push({ ...item, status: 'pending' });
-          fs.writeFileSync(APPROVALS_FILE, JSON.stringify(approvals, null, 2));
-          console.log(`+ Добавлено на согласование: ${type} "${item.id}"`);
-
-          // Отправляем уведомление владельцу
-          sendApprovalNotification(type, item);
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, added: !exists }));
-      } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: 'Ошибка' }));
-      }
-    });
-
-  // ===================================
-  // GET /subscribers — все лиды (для дашборда)
-  // ===================================
+  // GET /subscribers — все лиды
   } else if (req.method === 'GET' && req.url === '/subscribers') {
-    const subscribers = loadSubscribers();
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(subscribers, null, 2));
+    try {
+      const { rows } = await pool.query('SELECT * FROM subscribers ORDER BY subscribed_at DESC');
+      const formatted = rows.map(r => ({
+        name: r.name, email: r.email, source: r.source,
+        subscribedAt: r.subscribed_at,
+        email1Sent: r.email1_sent, email2Sent: r.email2_sent, email3Sent: r.email3_sent,
+        completed: r.completed, status: r.status, notes: r.notes
+      }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(formatted));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
 
-  // ===================================
-  // GET / или /dashboard — CRM дашборд
-  // ===================================
-  } else if (req.method === 'GET' && (req.url === '/' || req.url === '/dashboard')) {
-    const html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8');
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(html);
+  // GET /approvals — данные согласования
+  } else if (req.method === 'GET' && req.url === '/approvals') {
+    try {
+      const { rows } = await pool.query('SELECT * FROM approvals ORDER BY created_at ASC');
+      const result = { posts: [], landings: [], emails: [], competitors: [], seo: [], weekly: [], monthly: [] };
+      for (const row of rows) {
+        const type = row.type;
+        if (!result[type]) result[type] = [];
+        result[type].push({ ...row.data, status: row.status });
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
 
-  // ===================================
-  // POST /update-lead — обновить статус или заметку
-  // ===================================
+  // POST /subscribe — новый лид
+  } else if (req.method === 'POST' && req.url === '/subscribe') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { name, email, source } = JSON.parse(body);
+        if (!email || !name) {
+          res.writeHead(400); res.end(JSON.stringify({ error: 'Нужны name и email' })); return;
+        }
+        await pool.query(
+          'INSERT INTO subscribers (name, email, source) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
+          [name, email, source || 'direct']
+        );
+        console.log(`+ Новый лид: ${name} (${email})`);
+        checkAndSendEmails();
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+
+  // POST /update-lead
   } else if (req.method === 'POST' && req.url === '/update-lead') {
     let body = '';
     req.on('data', chunk => body += chunk);
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const { email, status, notes } = JSON.parse(body);
-        const subscribers = loadSubscribers();
-        const lead = subscribers.find(s => s.email === email);
-        if (lead) {
-          if (status !== undefined) lead.status = status;
-          if (notes !== undefined) lead.notes = notes;
-          saveSubscribers(subscribers);
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
+        await pool.query(
+          'UPDATE subscribers SET status = COALESCE($1, status), notes = COALESCE($2, notes) WHERE email = $3',
+          [status, notes, email]
+        );
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
       } catch(e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: 'Ошибка' }));
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
       }
     });
 
-  // ===================================
-  // Всё остальное — 404
-  // ===================================
+  // POST /approve — обновить статус
+  } else if (req.method === 'POST' && req.url === '/approve') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { type, index, status, editedContent, approvedAt } = JSON.parse(body);
+        const { rows } = await pool.query(
+          'SELECT * FROM approvals WHERE type = $1 ORDER BY created_at ASC', [type]
+        );
+        if (rows[index]) {
+          const row = rows[index];
+          const updatedData = { ...row.data };
+          if (editedContent !== undefined) updatedData.editedContent = editedContent;
+          if (approvedAt !== undefined) updatedData.approvedAt = approvedAt;
+          await pool.query(
+            'UPDATE approvals SET status = $1, data = $2 WHERE id = $3',
+            [status || row.status, JSON.stringify(updatedData), row.id]
+          );
+        }
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+
+  // POST /add-approval — агент добавляет контент
+  } else if (req.method === 'POST' && req.url === '/add-approval') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { type, item } = JSON.parse(body);
+        const result = await pool.query(
+          'INSERT INTO approvals (type, item_id, data, status) VALUES ($1, $2, $3, $4) ON CONFLICT (item_id) DO NOTHING RETURNING id',
+          [type, item.id, JSON.stringify(item), 'pending']
+        );
+        const added = result.rows.length > 0;
+        if (added) {
+          console.log(`+ Согласование: ${type} "${item.id}"`);
+          sendApprovalNotification(type, item);
+        }
+        res.writeHead(200); res.end(JSON.stringify({ ok: true, added }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+
   } else {
-    res.writeHead(404);
-    res.end('Not found');
+    res.writeHead(404); res.end('Not found');
   }
 });
 
@@ -376,23 +323,16 @@ const server = http.createServer(async (req, res) => {
 // ЗАПУСК
 // ===================================
 
-// Запускаем сервер
-server.listen(config.PORT, () => {
-  console.log('');
-  console.log('========================================');
-  console.log('  TimeClock 365 Email Server');
-  console.log('========================================');
-  console.log(`  Сервер запущен: http://localhost:${config.PORT}`);
-  console.log(`  Отправка с: ${config.GMAIL_USER}`);
-  console.log('========================================');
-  console.log('');
+initDB().then(() => {
+  server.listen(config.PORT, () => {
+    console.log(`✓ Сервер запущен на порту ${config.PORT}`);
+  });
+  setInterval(checkAndSendEmails, 15 * 60 * 1000);
+  checkAndSendEmails();
+}).catch(err => {
+  console.error('Ошибка инициализации БД:', err.message);
+  // Запускаем сервер даже без БД
+  server.listen(config.PORT, () => {
+    console.log(`✓ Сервер запущен (без БД) на порту ${config.PORT}`);
+  });
 });
-
-// Проверяем расписание каждые 15 минут
-const FIFTEEN_MINUTES = 15 * 60 * 1000;
-setInterval(checkAndSendEmails, FIFTEEN_MINUTES);
-
-// Первая проверка сразу при старте сервера
-checkAndSendEmails();
-
-console.log('Проверка расписания запущена (каждые 15 минут)');
