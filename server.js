@@ -394,9 +394,11 @@ const server = http.createServer(async (req, res) => {
             );
           }
         }
+        // Сразу отвечаем — email отправляем в фоне (не блокируем ответ)
+        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
         // Уведомление Вике что правка готова — она смотрит и решает
         if (config.VIKA_EMAIL) {
-          await transporter.sendMail({
+          transporter.sendMail({
             from: `"TimeClock 365" <${config.GMAIL_USER}>`,
             to: config.VIKA_EMAIL,
             subject: `[TimeClock 365] ✅ Агент внёс правки — проверь`,
@@ -416,12 +418,11 @@ const server = http.createServer(async (req, res) => {
                 </div>
               </div>
             `,
-          });
+          }).catch(e => console.error('Email error:', e.message));
         }
         console.log(`✓ Правка завершена: ${type} "${itemId}"`);
-        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
       } catch(e) {
-        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+        console.error('revision-done error:', e.message);
       }
     });
 
