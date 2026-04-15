@@ -482,6 +482,36 @@ const server = http.createServer(async (req, res) => {
       }
     });
 
+  // POST /save-revision — простое сохранение результата правки (без email, сразу отвечает)
+  } else if (req.method === 'POST' && req.url === '/save-revision') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      try {
+        const { revisionId, summary, type, itemId, newContent } = JSON.parse(body);
+        await pool.query(
+          'UPDATE revisions SET status = $1, resolved_at = NOW(), summary = $2 WHERE id = $3',
+          ['resolved', summary || '', revisionId]
+        );
+        if (newContent && itemId) {
+          const { rows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
+          if (rows[0]) {
+            const updated = { ...rows[0].data, editedContent: newContent };
+            await pool.query(
+              'UPDATE approvals SET data = $1, status = $2 WHERE item_id = $3',
+              [JSON.stringify(updated), 'edited', itemId]
+            );
+          }
+        }
+        res.end(JSON.stringify({ ok: true }));
+        console.log(`✓ save-revision: ${type} "${itemId}" rev#${revisionId}`);
+      } catch(e) {
+        res.end(JSON.stringify({ error: e.message }));
+        console.error('save-revision error:', e.message);
+      }
+    });
+
   // POST /reset-revisions — сбросить все failed/pending правки
   } else if (req.method === 'POST' && req.url === '/reset-revisions') {
     try {
