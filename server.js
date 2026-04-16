@@ -15,7 +15,7 @@ const emails = require('./emails');
 const LI_CLIENT_ID     = process.env.LINKEDIN_CLIENT_ID     || '78k2r88niesi98';
 const LI_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || '';
 const LI_REDIRECT_URI  = 'https://timeclock365-crm-production.up.railway.app/linkedin-callback';
-const LI_SCOPES        = 'w_member_social';
+const LI_SCOPES        = 'w_member_social w_organization_social';
 
 // ===================================
 // БАЗА ДАННЫХ — PostgreSQL
@@ -232,25 +232,25 @@ async function getLinkedInToken() {
   } catch(e) { return process.env.LINKEDIN_ACCESS_TOKEN || null; }
 }
 
-// Получить person ID из БД
-async function getLinkedInPersonId() {
+// Получить org ID из БД
+async function getLinkedInOrgId() {
   try {
-    const r = await pool.query("SELECT value FROM settings WHERE key = 'linkedin_person_id'");
-    return r.rows[0]?.value || process.env.LINKEDIN_PERSON_ID || null;
-  } catch(e) { return process.env.LINKEDIN_PERSON_ID || null; }
+    const r = await pool.query("SELECT value FROM settings WHERE key = 'linkedin_org_id'");
+    return r.rows[0]?.value || process.env.LINKEDIN_ORG_ID || null;
+  } catch(e) { return process.env.LINKEDIN_ORG_ID || null; }
 }
 
 async function postToLinkedIn(text) {
   const token = await getLinkedInToken();
-  const personId = await getLinkedInPersonId();
+  const orgId = await getLinkedInOrgId();
 
-  if (!token || !personId) {
-    console.log('⚠ LinkedIn credentials not set — skipping auto-post');
+  if (!token || !orgId) {
+    console.log('⚠ LinkedIn token или org ID не установлен — пропускаем');
     return { ok: false, reason: 'no_credentials' };
   }
 
   const postBody = JSON.stringify({
-    author: `urn:li:person:${personId}`,
+    author: `urn:li:organization:${orgId}`,
     lifecycleState: 'PUBLISHED',
     specificContent: {
       'com.linkedin.ugc.ShareContent': {
@@ -648,42 +648,44 @@ const server = http.createServer(async (req, res) => {
       const token = tokenData.access_token;
       if (!token) throw new Error('No token: ' + tokenRes.body);
 
-      // Получить person ID через /v2/userinfo (работает с w_member_social)
-      let me = {}, personId = '';
+      // Получить ID организации (компании) где пользователь — администратор
+      let orgId = '', orgName = '';
       try {
-        const meRes = await httpsReq({
-          hostname: 'api.linkedin.com', path: '/v2/userinfo', method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}` }
+        const orgRes = await httpsReq({
+          hostname: 'api.linkedin.com',
+          path: '/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&projection=(elements*(organization~(id,localizedName)))',
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}`, 'X-Restli-Protocol-Version': '2.0.0' }
         });
-        me = JSON.parse(meRes.body);
-        // /v2/userinfo возвращает поле "sub" как person ID
-        personId = me.sub || me.id || '';
-      } catch(e) {
-        console.log('userinfo failed, trying /v2/me:', e.message);
-        try {
-          const meRes2 = await httpsReq({
-            hostname: 'api.linkedin.com', path: '/v2/me', method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}`, 'X-Restli-Protocol-Version': '2.0.0' }
-          });
-          const me2 = JSON.parse(meRes2.body);
-          personId = me2.id || '';
-          me = me2;
-        } catch(e2) { console.log('/v2/me also failed:', e2.message); }
+        const orgData = JSON.parse(orgRes.body);
+        console.log('Org ACL response:', orgRes.status, orgRes.body.slice(0, 300));
+        const firstOrg = orgData.elements?.[0]?.['organization~'];
+        if (firstOrg) {
+          orgId = String(firstOrg.id || '');
+          orgName = firstOrg.localizedName || '';
+        }
+      } catch(e) { console.log('org lookup failed:', e.message); }
+
+      // Сохранить токен и org ID в БД
+      await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
+      if (orgId) {
+        await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_org_id',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [orgId]);
+        console.log(`✓ LinkedIn авторизован: org="${orgName}" (${orgId})`);
+      } else {
+        console.log('⚠ Org ID не найден — проверь что аккаунт является admin страницы компании');
       }
 
-      // Сохранить в БД
-      await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
-      await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_person_id',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [personId]);
-
-      console.log(`✓ LinkedIn авторизован: person=${personId}`);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`<!DOCTYPE html><html><head><meta charset="UTF-8">
         <style>body{font-family:Arial,sans-serif;max-width:600px;margin:60px auto;text-align:center;}
-        .ok{color:#12B76A;font-size:48px;} h2{color:#0d1117;} p{color:#555;}</style></head><body>
+        .ok{color:#12B76A;font-size:48px;} h2{color:#0d1117;} p{color:#555;}
+        .warn{color:#F59E0B;}</style></head><body>
         <div class="ok">✓</div>
         <h2>LinkedIn connected!</h2>
-        <p>Account: <strong>${me.name||me.localizedFirstName||''} ${me.localizedLastName||''} ${personId ? '(ID: '+personId+')' : ''}</strong></p>
-        <p>Token saved. Posts will now publish to LinkedIn automatically.</p>
+        ${orgId
+          ? `<p>Компания: <strong>${orgName}</strong> (ID: ${orgId})</p><p>Посты будут публиковаться от имени страницы компании.</p>`
+          : `<p class="warn">⚠ Страница компании не найдена. Убедись что этот аккаунт является администратором страницы TimeClock 365 в LinkedIn.</p>`
+        }
         <p style="margin-top:32px;"><a href="/approvals-page" style="background:#3479E9;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Approvals →</a></p>
       </body></html>`);
     } catch(e) {
