@@ -646,7 +646,18 @@ const server = http.createServer(async (req, res) => {
       }, body);
       const tokenData = JSON.parse(tokenRes.body);
       const token = tokenData.access_token;
+      console.log('Token response:', JSON.stringify({ scope: tokenData.scope, has_id_token: !!tokenData.id_token, keys: Object.keys(tokenData) }));
       if (!token) throw new Error('No token: ' + tokenRes.body);
+
+      // Извлечь sub из id_token (JWT) если есть — для OpenID Connect
+      let personIdFromJwt = '';
+      if (tokenData.id_token) {
+        try {
+          const payload = JSON.parse(Buffer.from(tokenData.id_token.split('.')[1], 'base64url').toString());
+          personIdFromJwt = payload.sub || '';
+          console.log('JWT payload sub:', personIdFromJwt, 'name:', payload.name);
+        } catch(e) { console.log('JWT parse error:', e.message); }
+      }
 
       // Получить member ID через /v2/userinfo (openid profile)
       let personId = '', personName = '', uiDebug = '';
@@ -658,10 +669,12 @@ const server = http.createServer(async (req, res) => {
         uiDebug = `status=${uiRes.status} body=${uiRes.body.slice(0,200)}`;
         console.log('userinfo:', uiDebug);
         const ui = JSON.parse(uiRes.body);
-        personId = ui.sub || '';
+        personId = ui.sub || personIdFromJwt || '';
         personName = ui.name || `${ui.given_name||''} ${ui.family_name||''}`.trim();
         if (personId) console.log(`✓ LinkedIn member: ${personName} (${personId})`);
       } catch(e) { uiDebug = 'error: ' + e.message; console.log('userinfo error:', e.message); }
+      // Если userinfo не дал ID — берём из JWT
+      if (!personId && personIdFromJwt) { personId = personIdFromJwt; }
 
       // Сохранить токен и person ID в БД
       await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
