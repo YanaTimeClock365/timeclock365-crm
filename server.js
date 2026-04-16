@@ -15,7 +15,7 @@ const emails = require('./emails');
 const LI_CLIENT_ID     = process.env.LINKEDIN_CLIENT_ID     || '78k2r88niesi98';
 const LI_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || '';
 const LI_REDIRECT_URI  = 'https://timeclock365-crm-production.up.railway.app/linkedin-callback';
-const LI_SCOPES        = 'w_member_social w_organization_social';
+const LI_SCOPES        = 'w_member_social';
 
 // ===================================
 // БАЗА ДАННЫХ — PostgreSQL
@@ -648,44 +648,20 @@ const server = http.createServer(async (req, res) => {
       const token = tokenData.access_token;
       if (!token) throw new Error('No token: ' + tokenRes.body);
 
-      // Получить ID организации (компании) где пользователь — администратор
-      let orgId = '', orgName = '';
-      try {
-        const orgRes = await httpsReq({
-          hostname: 'api.linkedin.com',
-          path: '/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&projection=(elements*(organization~(id,localizedName)))',
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}`, 'X-Restli-Protocol-Version': '2.0.0' }
-        });
-        const orgData = JSON.parse(orgRes.body);
-        console.log('Org ACL response:', orgRes.status, orgRes.body.slice(0, 300));
-        const firstOrg = orgData.elements?.[0]?.['organization~'];
-        if (firstOrg) {
-          orgId = String(firstOrg.id || '');
-          orgName = firstOrg.localizedName || '';
-        }
-      } catch(e) { console.log('org lookup failed:', e.message); }
-
-      // Сохранить токен и org ID в БД
+      // Сохранить токен в БД
       await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
-      if (orgId) {
-        await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_org_id',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [orgId]);
-        console.log(`✓ LinkedIn авторизован: org="${orgName}" (${orgId})`);
-      } else {
-        console.log('⚠ Org ID не найден — проверь что аккаунт является admin страницы компании');
-      }
+      console.log(`✓ LinkedIn токен сохранён`);
 
+      const orgId = process.env.LINKEDIN_ORG_ID || '';
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`<!DOCTYPE html><html><head><meta charset="UTF-8">
         <style>body{font-family:Arial,sans-serif;max-width:600px;margin:60px auto;text-align:center;}
         .ok{color:#12B76A;font-size:48px;} h2{color:#0d1117;} p{color:#555;}
-        .warn{color:#F59E0B;}</style></head><body>
+        .warn{color:#F59E0B;font-size:14px;background:#FFF9E6;padding:16px;border-radius:8px;text-align:left;}</style></head><body>
         <div class="ok">✓</div>
         <h2>LinkedIn connected!</h2>
-        ${orgId
-          ? `<p>Компания: <strong>${orgName}</strong> (ID: ${orgId})</p><p>Посты будут публиковаться от имени страницы компании.</p>`
-          : `<p class="warn">⚠ Страница компании не найдена. Убедись что этот аккаунт является администратором страницы TimeClock 365 в LinkedIn.</p>`
-        }
+        <p>Токен сохранён. ${orgId ? `Org ID: <strong>${orgId}</strong> — посты пойдут от компании.` : ''}</p>
+        ${!orgId ? `<div class="warn">⚠ Добавь <strong>LINKEDIN_ORG_ID</strong> в Railway Variables — числовой ID страницы TimeClock 365 в LinkedIn.</div>` : ''}
         <p style="margin-top:32px;"><a href="/approvals-page" style="background:#3479E9;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Approvals →</a></p>
       </body></html>`);
     } catch(e) {
