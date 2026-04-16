@@ -637,9 +637,9 @@ const server = http.createServer(async (req, res) => {
     if (!code) { res.writeHead(400); res.end('No code'); return; }
     try {
       // Обмен code → access_token
-      const body = `grant_type=authorization_code&code=${code}`
+      const body = `grant_type=authorization_code&code=${encodeURIComponent(code)}`
         + `&redirect_uri=${encodeURIComponent(LI_REDIRECT_URI)}`
-        + `&client_id=${LI_CLIENT_ID}&client_secret=${LI_CLIENT_SECRET}`;
+        + `&client_id=${encodeURIComponent(LI_CLIENT_ID)}&client_secret=${encodeURIComponent(LI_CLIENT_SECRET)}`;
       const tokenRes = await httpsReq({
         hostname: 'www.linkedin.com', path: '/oauth/v2/accessToken', method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
