@@ -15,7 +15,7 @@ const emails = require('./emails');
 const LI_CLIENT_ID     = process.env.LINKEDIN_CLIENT_ID     || '78k2r88niesi98';
 const LI_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || '';
 const LI_REDIRECT_URI  = 'https://timeclock365-crm-production.up.railway.app/linkedin-callback';
-const LI_SCOPES        = 'openid profile w_member_social';
+const LI_SCOPES        = 'r_liteprofile w_member_social';
 
 // ===================================
 // БАЗА ДАННЫХ — PostgreSQL
@@ -650,11 +650,11 @@ const server = http.createServer(async (req, res) => {
 
       // Получить person ID
       const meRes = await httpsReq({
-        hostname: 'api.linkedin.com', path: '/v2/userinfo', method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` }
+        hostname: 'api.linkedin.com', path: '/v2/me', method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}`, 'X-Restli-Protocol-Version': '2.0.0' }
       });
       const me = JSON.parse(meRes.body);
-      const personId = me.sub;
+      const personId = me.id;
 
       // Сохранить в БД
       await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
@@ -667,7 +667,7 @@ const server = http.createServer(async (req, res) => {
         .ok{color:#12B76A;font-size:48px;} h2{color:#0d1117;} p{color:#555;}</style></head><body>
         <div class="ok">✓</div>
         <h2>LinkedIn connected!</h2>
-        <p>Account: <strong>${me.name||personId}</strong></p>
+        <p>Account: <strong>${me.localizedFirstName||''} ${me.localizedLastName||personId}</strong></p>
         <p>Token saved. Posts will now publish to LinkedIn automatically.</p>
         <p style="margin-top:32px;"><a href="/approvals-page" style="background:#3479E9;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Approvals →</a></p>
       </body></html>`);
