@@ -720,39 +720,9 @@ const server = http.createServer(async (req, res) => {
 
   // GET /linkedin-test — тестовый пост в LinkedIn
   } else if (req.method === 'GET' && req.url === '/linkedin-test') {
-    const token = await getLinkedInToken();
-    const orgId = await getLinkedInOrgId();
-
-    // Сначала пробуем /v2/me чтобы получить person ID
-    let meData = {}, personId = '';
-    try {
-      const meRes = await httpsReq({
-        hostname: 'api.linkedin.com', path: '/v2/me', method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}`, 'X-Restli-Protocol-Version': '2.0.0' }
-      });
-      meData = JSON.parse(meRes.body);
-      personId = meData.id || '';
-    } catch(e) {}
-
-    // Пробуем постить как person если есть ID, иначе как org
-    const author = personId ? `urn:li:person:${personId}` : `urn:li:organization:${orgId}`;
-    const postBody = JSON.stringify({
-      author,
-      lifecycleState: 'PUBLISHED',
-      specificContent: { 'com.linkedin.ugc.ShareContent': {
-        shareCommentary: { text: '🧪 Тест автопостинга TimeClock 365. Если видишь это — LinkedIn интеграция работает! #TimeClock365' },
-        shareMediaCategory: 'NONE'
-      }},
-      visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
-    });
-    const postRes = await httpsReq({
-      hostname: 'api.linkedin.com', path: '/v2/ugcPosts', method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postBody), 'X-Restli-Protocol-Version': '2.0.0' }
-    }, postBody);
-
+    const result = await postToLinkedIn('🧪 Тест автопостинга TimeClock 365. Если видишь это — LinkedIn интеграция работает! #TimeClock365');
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ author, personId, orgId, meData, postStatus: postRes.status, postBody: postRes.body.slice(0,300) }));
+    res.end(JSON.stringify(result));
 
   // POST /reset-revisions — сбросить все failed/pending правки
   } else if (req.method === 'POST' && req.url === '/reset-revisions') {
