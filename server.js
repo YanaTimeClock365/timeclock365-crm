@@ -15,7 +15,7 @@ const emails = require('./emails');
 const LI_CLIENT_ID     = process.env.LINKEDIN_CLIENT_ID     || '78k2r88niesi98';
 const LI_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || '';
 const LI_REDIRECT_URI  = 'https://timeclock365-crm-production.up.railway.app/linkedin-callback';
-const LI_SCOPES        = 'w_member_social';
+const LI_SCOPES        = 'openid profile w_member_social';
 
 // ===================================
 // БАЗА ДАННЫХ — PostgreSQL
@@ -232,25 +232,25 @@ async function getLinkedInToken() {
   } catch(e) { return process.env.LINKEDIN_ACCESS_TOKEN || null; }
 }
 
-// Получить org ID из БД
-async function getLinkedInOrgId() {
+// Получить person ID из БД
+async function getLinkedInPersonId() {
   try {
-    const r = await pool.query("SELECT value FROM settings WHERE key = 'linkedin_org_id'");
-    return r.rows[0]?.value || process.env.LINKEDIN_ORG_ID || null;
-  } catch(e) { return process.env.LINKEDIN_ORG_ID || null; }
+    const r = await pool.query("SELECT value FROM settings WHERE key = 'linkedin_person_id'");
+    return r.rows[0]?.value || process.env.LINKEDIN_PERSON_ID || null;
+  } catch(e) { return process.env.LINKEDIN_PERSON_ID || null; }
 }
 
 async function postToLinkedIn(text) {
   const token = await getLinkedInToken();
-  const orgId = await getLinkedInOrgId();
+  const personId = await getLinkedInPersonId();
 
-  if (!token || !orgId) {
-    console.log('⚠ LinkedIn token или org ID не установлен — пропускаем');
+  if (!token || !personId) {
+    console.log('⚠ LinkedIn token или person ID не установлен — пропускаем');
     return { ok: false, reason: 'no_credentials' };
   }
 
   const postBody = JSON.stringify({
-    author: `urn:li:organization:${orgId}`,
+    author: `urn:li:person:${personId}`,
     lifecycleState: 'PUBLISHED',
     specificContent: {
       'com.linkedin.ugc.ShareContent': {
@@ -648,20 +648,33 @@ const server = http.createServer(async (req, res) => {
       const token = tokenData.access_token;
       if (!token) throw new Error('No token: ' + tokenRes.body);
 
-      // Сохранить токен в БД
-      await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
-      console.log(`✓ LinkedIn токен сохранён`);
+      // Получить member ID через /v2/userinfo (openid profile)
+      let personId = '', personName = '';
+      try {
+        const uiRes = await httpsReq({
+          hostname: 'api.linkedin.com', path: '/v2/userinfo', method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const ui = JSON.parse(uiRes.body);
+        personId = ui.sub || '';
+        personName = ui.name || `${ui.given_name||''} ${ui.family_name||''}`.trim();
+        console.log(`✓ LinkedIn member: ${personName} (${personId})`);
+      } catch(e) { console.log('userinfo error:', e.message); }
 
-      const orgId = process.env.LINKEDIN_ORG_ID || '';
+      // Сохранить токен и person ID в БД
+      await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
+      if (personId) {
+        await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_person_id',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [personId]);
+      }
+
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`<!DOCTYPE html><html><head><meta charset="UTF-8">
         <style>body{font-family:Arial,sans-serif;max-width:600px;margin:60px auto;text-align:center;}
-        .ok{color:#12B76A;font-size:48px;} h2{color:#0d1117;} p{color:#555;}
-        .warn{color:#F59E0B;font-size:14px;background:#FFF9E6;padding:16px;border-radius:8px;text-align:left;}</style></head><body>
+        .ok{color:#12B76A;font-size:48px;} h2{color:#0d1117;} p{color:#555;}</style></head><body>
         <div class="ok">✓</div>
         <h2>LinkedIn connected!</h2>
-        <p>Токен сохранён. ${orgId ? `Org ID: <strong>${orgId}</strong> — посты пойдут от компании.` : ''}</p>
-        ${!orgId ? `<div class="warn">⚠ Добавь <strong>LINKEDIN_ORG_ID</strong> в Railway Variables — числовой ID страницы TimeClock 365 в LinkedIn.</div>` : ''}
+        <p>Аккаунт: <strong>${personName||personId||'—'}</strong></p>
+        <p>${personId ? '✓ Member ID сохранён. Посты будут публиковаться автоматически.' : '⚠ Member ID не найден — попробуй авторизоваться снова.'}</p>
         <p style="margin-top:32px;"><a href="/approvals-page" style="background:#3479E9;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Approvals →</a></p>
       </body></html>`);
     } catch(e) {
