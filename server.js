@@ -471,6 +471,7 @@ async function handleRequest(req, res) {
           if (editedContent !== undefined) updatedData.editedContent = editedContent;
           if (approvedAt !== undefined) updatedData.approvedAt = approvedAt;
           if (previewUrl !== undefined) updatedData.previewUrl = previewUrl;
+          if (imageUrl !== undefined) updatedData.imageUrl = imageUrl;
 
           // Автопостинг в LinkedIn когда пост одобрен
           let linkedInResult = null;

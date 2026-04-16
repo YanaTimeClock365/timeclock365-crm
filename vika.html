@@ -251,8 +251,10 @@ function render() {
           <div class="media-row">
             <span class="media-label">📷 Фото/видео:</span>
             <input class="media-input" id="img-${i}" type="url"
+              value="${esc(post.imageUrl||'')}"
               placeholder="https://yanatimeclock365.github.io/timeclock365-landings/images/banner.jpg" />
           </div>
+          ${post.imageUrl ? `<div style="margin-top:-4px;"><img src="${esc(post.imageUrl)}" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;border:1px solid #e0e8f5;" onerror="this.style.display='none'"/></div>` : ''}
           <button class="btn btn-approve" id="btn-${i}" onclick="approve(${i})">
             🚀 Одобрить и опубликовать в LinkedIn
           </button>
