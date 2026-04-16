@@ -455,7 +455,7 @@ async function handleRequest(req, res) {
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { type, index, status, editedContent, approvedAt, previewUrl } = JSON.parse(body);
+        const { type, index, status, editedContent, approvedAt, previewUrl, imageUrl } = JSON.parse(body);
         const { rows } = await pool.query(
           'SELECT * FROM approvals WHERE type = $1 ORDER BY created_at ASC', [type]
         );
@@ -470,7 +470,7 @@ async function handleRequest(req, res) {
           let linkedInResult = null;
           if (type === 'posts' && status === 'approved') {
             const text = updatedData.editedContent || row.data.editedContent || row.data.content || '';
-            linkedInResult = await postToLinkedIn(text);
+            linkedInResult = await postToLinkedIn(text, imageUrl || null);
             if (linkedInResult.ok) {
               updatedData.publishedAt = new Date().toISOString();
               updatedData.linkedInPosted = true;
