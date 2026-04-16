@@ -672,13 +672,11 @@ const server = http.createServer(async (req, res) => {
   // GET /linkedin-whoami — узнать member ID из токена
   } else if (req.method === 'GET' && req.url === '/linkedin-whoami') {
     const token = await getLinkedInToken();
-    const credentials = Buffer.from(`${LI_CLIENT_ID}:${LI_CLIENT_SECRET}`).toString('base64');
-    const intrBody = `token=${encodeURIComponent(token)}`;
+    const intrBody = `token=${encodeURIComponent(token)}&client_id=${encodeURIComponent(LI_CLIENT_ID)}&client_secret=${encodeURIComponent(LI_CLIENT_SECRET)}`;
     try {
       const r = await httpsReq({
         hostname: 'www.linkedin.com', path: '/oauth/v2/introspectToken', method: 'POST',
-        headers: { 'Authorization': `Basic ${credentials}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(intrBody) }
       }, intrBody);
       res.writeHead(200, { 'Content-Type': 'application/json' });
