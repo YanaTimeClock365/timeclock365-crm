@@ -669,6 +669,12 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500); res.end('OAuth error: ' + e.message);
     }
 
+  // GET /linkedin-test — тестовый пост в LinkedIn
+  } else if (req.method === 'GET' && req.url === '/linkedin-test') {
+    const result = await postToLinkedIn('🧪 Тест автопостинга TimeClock 365. Если видишь это — LinkedIn интеграция работает! #TimeClock365');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+
   // POST /reset-revisions — сбросить все failed/pending правки
   } else if (req.method === 'POST' && req.url === '/reset-revisions') {
     try {
