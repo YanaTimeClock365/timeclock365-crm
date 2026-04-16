@@ -672,15 +672,19 @@ const server = http.createServer(async (req, res) => {
   // GET /linkedin-whoami — узнать member ID из токена
   } else if (req.method === 'GET' && req.url === '/linkedin-whoami') {
     const token = await getLinkedInToken();
-    const intrBody = `token=${encodeURIComponent(token)}&client_id=${encodeURIComponent(LI_CLIENT_ID)}&client_secret=${encodeURIComponent(LI_CLIENT_SECRET)}`;
     try {
-      const r = await httpsReq({
-        hostname: 'www.linkedin.com', path: '/oauth/v2/introspectToken', method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
-          'Content-Length': Buffer.byteLength(intrBody) }
-      }, intrBody);
+      // Пробуем /v2/me для получения member ID
+      const meRes = await httpsReq({
+        hostname: 'api.linkedin.com', path: '/v2/me', method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}`, 'X-Restli-Protocol-Version': '2.0.0' }
+      });
+      // Также пробуем /v2/userinfo
+      const uiRes = await httpsReq({
+        hostname: 'api.linkedin.com', path: '/v2/userinfo', method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(r.body);
+      res.end(JSON.stringify({ me_status: meRes.status, me: meRes.body, userinfo_status: uiRes.status, userinfo: uiRes.body }));
     } catch(e) {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
