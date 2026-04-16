@@ -15,7 +15,7 @@ const emails = require('./emails');
 const LI_CLIENT_ID     = process.env.LINKEDIN_CLIENT_ID     || '78k2r88niesi98';
 const LI_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || '';
 const LI_REDIRECT_URI  = 'https://timeclock365-crm-production.up.railway.app/linkedin-callback';
-const LI_SCOPES        = 'r_liteprofile w_member_social';
+const LI_SCOPES        = 'w_member_social';
 
 // ===================================
 // БАЗА ДАННЫХ — PostgreSQL
@@ -648,13 +648,28 @@ const server = http.createServer(async (req, res) => {
       const token = tokenData.access_token;
       if (!token) throw new Error('No token: ' + tokenRes.body);
 
-      // Получить person ID
-      const meRes = await httpsReq({
-        hostname: 'api.linkedin.com', path: '/v2/me', method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}`, 'X-Restli-Protocol-Version': '2.0.0' }
-      });
-      const me = JSON.parse(meRes.body);
-      const personId = me.id;
+      // Получить person ID через /v2/userinfo (работает с w_member_social)
+      let me = {}, personId = '';
+      try {
+        const meRes = await httpsReq({
+          hostname: 'api.linkedin.com', path: '/v2/userinfo', method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        me = JSON.parse(meRes.body);
+        // /v2/userinfo возвращает поле "sub" как person ID
+        personId = me.sub || me.id || '';
+      } catch(e) {
+        console.log('userinfo failed, trying /v2/me:', e.message);
+        try {
+          const meRes2 = await httpsReq({
+            hostname: 'api.linkedin.com', path: '/v2/me', method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}`, 'X-Restli-Protocol-Version': '2.0.0' }
+          });
+          const me2 = JSON.parse(meRes2.body);
+          personId = me2.id || '';
+          me = me2;
+        } catch(e2) { console.log('/v2/me also failed:', e2.message); }
+      }
 
       // Сохранить в БД
       await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
@@ -667,7 +682,7 @@ const server = http.createServer(async (req, res) => {
         .ok{color:#12B76A;font-size:48px;} h2{color:#0d1117;} p{color:#555;}</style></head><body>
         <div class="ok">✓</div>
         <h2>LinkedIn connected!</h2>
-        <p>Account: <strong>${me.localizedFirstName||''} ${me.localizedLastName||personId}</strong></p>
+        <p>Account: <strong>${me.name||me.localizedFirstName||''} ${me.localizedLastName||''} ${personId ? '(ID: '+personId+')' : ''}</strong></p>
         <p>Token saved. Posts will now publish to LinkedIn automatically.</p>
         <p style="margin-top:32px;"><a href="/approvals-page" style="background:#3479E9;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Approvals →</a></p>
       </body></html>`);
