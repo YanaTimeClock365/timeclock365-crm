@@ -649,17 +649,19 @@ const server = http.createServer(async (req, res) => {
       if (!token) throw new Error('No token: ' + tokenRes.body);
 
       // Получить member ID через /v2/userinfo (openid profile)
-      let personId = '', personName = '';
+      let personId = '', personName = '', uiDebug = '';
       try {
         const uiRes = await httpsReq({
           hostname: 'api.linkedin.com', path: '/v2/userinfo', method: 'GET',
           headers: { 'Authorization': `Bearer ${token}` }
         });
+        uiDebug = `status=${uiRes.status} body=${uiRes.body.slice(0,200)}`;
+        console.log('userinfo:', uiDebug);
         const ui = JSON.parse(uiRes.body);
         personId = ui.sub || '';
         personName = ui.name || `${ui.given_name||''} ${ui.family_name||''}`.trim();
-        console.log(`✓ LinkedIn member: ${personName} (${personId})`);
-      } catch(e) { console.log('userinfo error:', e.message); }
+        if (personId) console.log(`✓ LinkedIn member: ${personName} (${personId})`);
+      } catch(e) { uiDebug = 'error: ' + e.message; console.log('userinfo error:', e.message); }
 
       // Сохранить токен и person ID в БД
       await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
@@ -674,7 +676,8 @@ const server = http.createServer(async (req, res) => {
         <div class="ok">✓</div>
         <h2>LinkedIn connected!</h2>
         <p>Аккаунт: <strong>${personName||personId||'—'}</strong></p>
-        <p>${personId ? '✓ Member ID сохранён. Посты будут публиковаться автоматически.' : '⚠ Member ID не найден — попробуй авторизоваться снова.'}</p>
+        <p>${personId ? '✓ Member ID сохранён. Посты будут публиковаться автоматически.' : '⚠ Member ID не найден.'}</p>
+        <p style="font-size:12px;color:#999;word-break:break-all;">${uiDebug}</p>
         <p style="margin-top:32px;"><a href="/approvals-page" style="background:#3479E9;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Approvals →</a></p>
       </body></html>`);
     } catch(e) {
