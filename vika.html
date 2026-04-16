@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TimeClock 365 — Посты на согласование</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-height: 100vh; }
+
+.header {
+  background: #0A66C2;
+  padding: 18px 32px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.header h1 { color: #fff; font-size: 20px; font-weight: 700; }
+.header p  { color: rgba(255,255,255,0.8); font-size: 13px; margin-top: 2px; }
+
+.container { max-width: 780px; margin: 0 auto; padding: 32px 16px 64px; }
+
+.empty {
+  text-align: center; padding: 80px 20px; color: #888;
+}
+.empty h2 { font-size: 22px; margin-bottom: 8px; color: #555; }
+
+/* Post card */
+.post-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e0e8f5;
+  margin-bottom: 24px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(10,102,194,0.06);
+  transition: box-shadow 0.2s;
+}
+.post-card:hover { box-shadow: 0 4px 16px rgba(10,102,194,0.12); }
+.post-card.done { opacity: 0.55; border-color: #c8e6c9; }
+
+.card-top {
+  background: #f7f9ff;
+  border-bottom: 1px solid #e8eef8;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-num { font-weight: 700; font-size: 13px; color: #0A66C2; }
+.card-date { font-size: 12px; color: #aaa; }
+
+.badge-new  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.badge-ok   { background: #d4edda; color: #155724; border: 1px solid #28a745; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.badge-edit { background: #e8f0ff; color: #0A66C2; border: 1px solid #90b8f8; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+
+.post-text {
+  padding: 20px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #222;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 80px;
+  border-radius: 0;
+  outline: none;
+}
+.post-text[contenteditable="true"] {
+  background: #f7f9ff;
+  border-top: 2px solid #0A66C2;
+  cursor: text;
+}
+
+.card-actions {
+  padding: 16px 20px 20px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.edit-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 9px 18px;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s, opacity 0.15s;
+}
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn-edit  { background: #f0f4ff; color: #0A66C2; border: 1px solid #c0d4f8; }
+.btn-edit:hover { background: #dce8ff; }
+.btn-save  { background: #fff3e0; color: #e65c00; border: 1px solid #ffcc80; display: none; }
+.btn-save:hover { background: #ffe0b2; }
+
+.media-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.media-label { font-size: 12px; font-weight: 600; color: #666; white-space: nowrap; }
+.media-input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid #dce4f0;
+  border-radius: 7px;
+  font-size: 13px;
+  color: #333;
+  background: #fafbff;
+}
+.media-input:focus { outline: none; border-color: #0A66C2; background: #fff; }
+.media-input::placeholder { color: #bbb; }
+
+.btn-approve {
+  background: #0A66C2;
+  color: #fff;
+  padding: 14px;
+  border-radius: 8px;
+  width: 100%;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+.btn-approve:hover:not(:disabled) { background: #004da6; }
+.btn-approve:disabled { background: #90b8f8; cursor: default; }
+
+.comment-row {
+  border-top: 1px solid #f0f4ff;
+  padding: 12px 20px 16px;
+}
+.comment-label { font-size: 12px; font-weight: 600; color: #888; margin-bottom: 6px; }
+.comment-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #e0e8f5;
+  border-radius: 7px;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 60px;
+  font-family: Arial, sans-serif;
+  color: #333;
+}
+.comment-input:focus { outline: none; border-color: #0A66C2; }
+.btn-comment { margin-top: 8px; background: #fff7e6; color: #c46e00; border: 1px solid #ffc96e; padding: 7px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-comment:hover { background: #ffe8b2; }
+
+.toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+  background: #1C1C1D; color: #fff; padding: 12px 24px;
+  border-radius: 8px; font-size: 14px; font-weight: 600;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
+  z-index: 9999; white-space: nowrap;
+}
+.toast.show { opacity: 1; }
+
+.section-title {
+  font-size: 13px; font-weight: 700; color: #888;
+  text-transform: uppercase; letter-spacing: 1px;
+  margin: 32px 0 12px;
+}
+.done-card {
+  background: #fff; border-radius: 10px; border: 1px solid #e8f5e9;
+  padding: 14px 18px; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.done-title { font-size: 14px; font-weight: 600; color: #555; }
+.done-meta  { font-size: 12px; color: #aaa; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>📝 LinkedIn Посты</h1>
+    <p>Редактируй → добавь фото → публикуй одним нажатием</p>
+  </div>
+</div>
+
+<div class="container">
+  <div id="pending-list"></div>
+  <div id="done-section" style="display:none;">
+    <div class="section-title">✓ Опубликованные</div>
+    <div id="done-list"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let data = { posts: [] };
+
+async function load() {
+  try {
+    const r = await fetch('/approvals');
+    const d = await r.json();
+    data.posts = d.posts || [];
+  } catch(e) {}
+  render();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function render() {
+  const pending = data.posts.filter(p => ['pending','edited'].includes(p.status));
+  const done    = data.posts.filter(p => ['approved','published'].includes(p.status));
+
+  const el = document.getElementById('pending-list');
+
+  if (!pending.length) {
+    el.innerHTML = `<div class="empty">
+      <h2>Новых постов нет</h2>
+      <p>Агент добавляет посты каждый вторник в 9:00</p>
+    </div>`;
+  } else {
+    el.innerHTML = pending.map((post, ri) => {
+      const i = data.posts.indexOf(post);
+      const text = post.editedContent || post.content || '';
+      const isEdited = post.status === 'edited';
+      const badge = isEdited
+        ? `<span class="badge-edit">✏️ Отредактирован</span>`
+        : `<span class="badge-new">⏳ Новый</span>`;
+      return `
+      <div class="post-card" id="card-${i}">
+        <div class="card-top">
+          <div>
+            <div class="card-num">Пост ${ri+1}</div>
+            <div class="card-date">${post.date||''}</div>
+          </div>
+          ${badge}
+        </div>
+
+        <div class="post-text" id="text-${i}" contenteditable="false">${esc(text)}</div>
+
+        <div class="card-actions">
+          <div class="edit-row">
+            <button class="btn btn-edit" onclick="startEdit(${i})">✏️ Редактировать</button>
+            <button class="btn btn-save" id="save-${i}" onclick="saveEdit(${i})">💾 Сохранить изменения</button>
+          </div>
+          <div class="media-row">
+            <span class="media-label">📷 Фото/видео:</span>
+            <input class="media-input" id="img-${i}" type="url"
+              placeholder="https://yanatimeclock365.github.io/timeclock365-landings/images/banner.jpg" />
+          </div>
+          <button class="btn btn-approve" id="btn-${i}" onclick="approve(${i})">
+            🚀 Одобрить и опубликовать в LinkedIn
+          </button>
+        </div>
+
+        <div class="comment-row">
+          <div class="comment-label">💬 Попросить агента переписать:</div>
+          <textarea class="comment-input" id="cmt-${i}" placeholder="Опиши что изменить — агент перепишет за ~2 мин"></textarea>
+          <button class="btn-comment" onclick="sendComment(${i})">📨 Отправить агенту</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Done section
+  const doneEl = document.getElementById('done-list');
+  const doneSection = document.getElementById('done-section');
+  if (done.length) {
+    doneSection.style.display = 'block';
+    doneEl.innerHTML = done.map((post, ri) => `
+      <div class="done-card">
+        <div>
+          <div class="done-title">Пост ${ri+1} · ${post.date||''}</div>
+          <div class="done-meta">${post.publishedAt ? 'Опубликован: ' + new Date(post.publishedAt).toLocaleString('ru') : 'Одобрен'}</div>
+        </div>
+        <span class="badge-ok">✓ Опубликован</span>
+      </div>`).join('');
+  } else {
+    doneSection.style.display = 'none';
+  }
+}
+
+function startEdit(i) {
+  const el = document.getElementById(`text-${i}`);
+  el.contentEditable = 'true';
+  el.focus();
+  // Move cursor to end
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.getElementById(`save-${i}`).style.display = 'inline-block';
+}
+
+async function saveEdit(i) {
+  const el = document.getElementById(`text-${i}`);
+  const txt = el.innerText;
+  el.contentEditable = 'false';
+  document.getElementById(`save-${i}`).style.display = 'none';
+  await fetch('/approve', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ type:'posts', index: i, status:'edited', editedContent: txt, approvedAt: new Date().toISOString() })
+  });
+  toast('💾 Сохранено!');
+  await load();
+}
+
+async function approve(i) {
+  const btn = document.getElementById(`btn-${i}`);
+  const imageUrl = document.getElementById(`img-${i}`)?.value.trim() || '';
+
+  // Сначала сохраняем текст если он редактировался
+  const textEl = document.getElementById(`text-${i}`);
+  const editedContent = textEl?.innerText || '';
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Публикуем в LinkedIn...';
+
+  try {
+    const res = await fetch('/approve', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        type: 'posts', index: i, status: 'approved',
+        editedContent: editedContent,
+        approvedAt: new Date().toISOString(),
+        imageUrl: imageUrl || undefined
+      })
+    });
+    const result = await res.json();
+    if (result.linkedIn?.ok) {
+      toast('🚀 Пост опубликован в LinkedIn!');
+      document.getElementById(`card-${i}`).classList.add('done');
+    } else {
+      toast('⚠️ LinkedIn: ' + (result.linkedIn?.reason || JSON.stringify(result.linkedIn)));
+      btn.disabled = false;
+      btn.innerHTML = '🚀 Одобрить и опубликовать в LinkedIn';
+    }
+  } catch(e) {
+    toast('❌ Ошибка: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '🚀 Одобрить и опубликовать в LinkedIn';
+  }
+  await load();
+}
+
+async function sendComment(i) {
+  const cmt = document.getElementById(`cmt-${i}`)?.value.trim();
+  if (!cmt) { toast('Напиши комментарий перед отправкой'); return; }
+  const post = data.posts[i];
+  const itemId = post?.id || ('post-' + i);
+  await fetch('/request-revision', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ type:'posts', itemId, comment: cmt })
+  });
+  toast('📨 Отправлено! Агент перепишет за ~2 минуты');
+  document.getElementById(`cmt-${i}`).value = '';
+  setTimeout(load, 30000);
+  setTimeout(load, 90000);
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// Автообновление каждые 60 секунд
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>

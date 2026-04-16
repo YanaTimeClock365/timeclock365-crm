@@ -378,6 +378,12 @@ async function handleRequest(req, res) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(html);
 
+  // GET /vika — страница согласования постов для Вики
+  } else if (req.method === 'GET' && req.url === '/vika') {
+    const html = fs.readFileSync(path.join(__dirname, 'vika.html'), 'utf8');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(html);
+
   // GET /subscribers — все лиды
   } else if (req.method === 'GET' && req.url === '/subscribers') {
     try {
