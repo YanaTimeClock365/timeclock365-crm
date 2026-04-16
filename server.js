@@ -284,12 +284,20 @@ async function postToLinkedIn(text) {
 // HTTP СЕРВЕР
 // ===================================
 
-const server = http.createServer(async (req, res) => {
+const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
+
+  handleRequest(req, res).catch(err => {
+    console.error('Unhandled error:', err.message);
+    if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })); }
+  });
+});
+
+async function handleRequest(req, res) {
 
   // GET / или /dashboard — CRM
   if (req.method === 'GET' && (req.url === '/' || req.url === '/dashboard')) {
@@ -736,7 +744,7 @@ const server = http.createServer(async (req, res) => {
   } else {
     res.writeHead(404); res.end('Not found');
   }
-});
+} // end handleRequest
 
 // ===================================
 // ЗАПУСК
