@@ -669,6 +669,24 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500); res.end('OAuth error: ' + e.message);
     }
 
+  // GET /linkedin-whoami — узнать member ID из токена
+  } else if (req.method === 'GET' && req.url === '/linkedin-whoami') {
+    const token = await getLinkedInToken();
+    const credentials = Buffer.from(`${encodeURIComponent(LI_CLIENT_ID)}:${encodeURIComponent(LI_CLIENT_SECRET)}`).toString('base64');
+    const intrBody = `token=${encodeURIComponent(token)}`;
+    try {
+      const r = await httpsReq({
+        hostname: 'www.linkedin.com', path: '/oauth/v2/introspectToken', method: 'POST',
+        headers: { 'Authorization': `Basic ${credentials}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(intrBody) }
+      }, intrBody);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(r.body);
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+
   // GET /linkedin-test — тестовый пост в LinkedIn
   } else if (req.method === 'GET' && req.url === '/linkedin-test') {
     const token = await getLinkedInToken();
