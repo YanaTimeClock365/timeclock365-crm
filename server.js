@@ -240,7 +240,7 @@ async function getLinkedInPersonId() {
   } catch(e) { return process.env.LINKEDIN_PERSON_ID || null; }
 }
 
-async function postToLinkedIn(text) {
+async function postToLinkedIn(text, imageUrl) {
   const token = await getLinkedInToken();
   const personId = await getLinkedInPersonId();
 
@@ -249,15 +249,44 @@ async function postToLinkedIn(text) {
     return { ok: false, reason: 'no_credentials' };
   }
 
+  const SITE_URL = 'https://timeclock365.com';
+  const SITE_TITLE = 'TimeClock 365 — Door Access Control + Time Tracking';
+  const SITE_DESC = 'One system for access control and time tracking. Built for engineering and technical companies.';
+
+  // Если есть своя картинка — загружаем на LinkedIn
+  let imageAsset = null;
+  if (imageUrl) {
+    try {
+      imageAsset = await uploadImageToLinkedIn(token, personId, imageUrl);
+    } catch(e) { console.log('Image upload failed, will use article preview:', e.message); }
+  }
+
+  let shareContent;
+  if (imageAsset) {
+    // Пост с загруженной картинкой + ссылка в тексте
+    shareContent = {
+      shareCommentary: { text: text + `\n\n${SITE_URL}` },
+      shareMediaCategory: 'IMAGE',
+      media: [{ status: 'READY', media: imageAsset }]
+    };
+  } else {
+    // Пост со ссылкой — LinkedIn подтянет OG-картинку с сайта
+    shareContent = {
+      shareCommentary: { text },
+      shareMediaCategory: 'ARTICLE',
+      media: [{
+        status: 'READY',
+        originalUrl: SITE_URL,
+        title: { text: SITE_TITLE },
+        description: { text: SITE_DESC }
+      }]
+    };
+  }
+
   const postBody = JSON.stringify({
     author: `urn:li:person:${personId}`,
     lifecycleState: 'PUBLISHED',
-    specificContent: {
-      'com.linkedin.ugc.ShareContent': {
-        shareCommentary: { text },
-        shareMediaCategory: 'NONE'
-      }
-    },
+    specificContent: { 'com.linkedin.ugc.ShareContent': shareContent },
     visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
   });
 
@@ -272,12 +301,50 @@ async function postToLinkedIn(text) {
       }
     }, postBody);
     const ok = r.status === 201;
-    console.log(`${ok?'✓':'✗'} LinkedIn post: ${r.status}`);
+    console.log(`${ok?'✓':'✗'} LinkedIn post: ${r.status} ${ok?'':'body:'+r.body.slice(0,200)}`);
     return { ok, status: r.status };
   } catch(e) {
     console.error('LinkedIn error:', e.message);
     return { ok: false, reason: e.message };
   }
+}
+
+// Загрузка картинки на LinkedIn (для постов с фото)
+async function uploadImageToLinkedIn(token, personId, imageUrl) {
+  // Шаг 1: регистрируем upload
+  const regBody = JSON.stringify({
+    registerUploadRequest: {
+      owner: `urn:li:person:${personId}`,
+      recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+      serviceRelationships: [{ identifier: 'urn:li:userGeneratedContent', relationshipType: 'OWNER' }]
+    }
+  });
+  const regRes = await httpsReq({
+    hostname: 'api.linkedin.com', path: '/v2/assets?action=registerUpload', method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(regBody) }
+  }, regBody);
+  const regData = JSON.parse(regRes.body);
+  const uploadUrl = regData.value?.uploadMechanism?.['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']?.uploadUrl;
+  const asset = regData.value?.asset;
+  if (!uploadUrl || !asset) throw new Error('No upload URL from LinkedIn');
+
+  // Шаг 2: скачиваем картинку
+  const imgData = await new Promise((resolve, reject) => {
+    https.get(imageUrl, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    }).on('error', reject);
+  });
+
+  // Шаг 3: загружаем на LinkedIn
+  const uploadUri = new URL(uploadUrl);
+  await httpsReq({
+    hostname: uploadUri.hostname, path: uploadUri.pathname + uploadUri.search, method: 'PUT',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'image/jpeg', 'Content-Length': imgData.length }
+  }, imgData);
+
+  return asset;
 }
 
 // ===================================
