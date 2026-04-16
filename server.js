@@ -3,12 +3,19 @@
 // ===================================
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
 const { Pool } = require('pg');
 const config = require('./config');
 const emails = require('./emails');
+
+// LinkedIn credentials
+const LI_CLIENT_ID     = process.env.LINKEDIN_CLIENT_ID     || '78k2r88niesi98';
+const LI_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || '';
+const LI_REDIRECT_URI  = 'https://timeclock365-crm-production.up.railway.app/linkedin-callback';
+const LI_SCOPES        = 'openid profile w_member_social';
 
 // ===================================
 // БАЗА ДАННЫХ — PostgreSQL
@@ -65,8 +72,16 @@ async function initDB() {
   // Добавляем новые колонки если их нет (safe migration)
   await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS original_content TEXT`);
   await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS summary TEXT`);
-  // status can now be: pending | processing | resolved | failed
   await pool.query(`ALTER TABLE approvals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`);
+
+  // Таблица настроек (токены и т.д.)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
 
   console.log('✓ База данных инициализирована');
 }
@@ -192,6 +207,80 @@ async function sendApprovalNotification(type, item) {
 }
 
 // ===================================
+// LINKEDIN HELPERS
+// ===================================
+
+// Универсальный HTTPS запрос
+function httpsReq(options, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => resolve({ status: res.statusCode, body: d }));
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+// Получить токен из БД
+async function getLinkedInToken() {
+  try {
+    const r = await pool.query("SELECT value FROM settings WHERE key = 'linkedin_token'");
+    return r.rows[0]?.value || process.env.LINKEDIN_ACCESS_TOKEN || null;
+  } catch(e) { return process.env.LINKEDIN_ACCESS_TOKEN || null; }
+}
+
+// Получить person ID из БД
+async function getLinkedInPersonId() {
+  try {
+    const r = await pool.query("SELECT value FROM settings WHERE key = 'linkedin_person_id'");
+    return r.rows[0]?.value || process.env.LINKEDIN_PERSON_ID || null;
+  } catch(e) { return process.env.LINKEDIN_PERSON_ID || null; }
+}
+
+async function postToLinkedIn(text) {
+  const token = await getLinkedInToken();
+  const personId = await getLinkedInPersonId();
+
+  if (!token || !personId) {
+    console.log('⚠ LinkedIn credentials not set — skipping auto-post');
+    return { ok: false, reason: 'no_credentials' };
+  }
+
+  const postBody = JSON.stringify({
+    author: `urn:li:person:${personId}`,
+    lifecycleState: 'PUBLISHED',
+    specificContent: {
+      'com.linkedin.ugc.ShareContent': {
+        shareCommentary: { text },
+        shareMediaCategory: 'NONE'
+      }
+    },
+    visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
+  });
+
+  try {
+    const r = await httpsReq({
+      hostname: 'api.linkedin.com', path: '/v2/ugcPosts', method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postBody),
+        'X-Restli-Protocol-Version': '2.0.0'
+      }
+    }, postBody);
+    const ok = r.status === 201;
+    console.log(`${ok?'✓':'✗'} LinkedIn post: ${r.status}`);
+    return { ok, status: r.status };
+  } catch(e) {
+    console.error('LinkedIn error:', e.message);
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ===================================
 // HTTP СЕРВЕР
 // ===================================
 
@@ -301,12 +390,33 @@ const server = http.createServer(async (req, res) => {
           if (editedContent !== undefined) updatedData.editedContent = editedContent;
           if (approvedAt !== undefined) updatedData.approvedAt = approvedAt;
           if (previewUrl !== undefined) updatedData.previewUrl = previewUrl;
+
+          // Автопостинг в LinkedIn когда пост одобрен
+          let linkedInResult = null;
+          if (type === 'posts' && status === 'approved') {
+            const text = updatedData.editedContent || row.data.editedContent || row.data.content || '';
+            linkedInResult = await postToLinkedIn(text);
+            if (linkedInResult.ok) {
+              updatedData.publishedAt = new Date().toISOString();
+              updatedData.linkedInPosted = true;
+            }
+          }
+
+          const finalStatus = (type === 'posts' && status === 'approved' && linkedInResult?.ok)
+            ? 'published' : (status || row.status);
+
           await pool.query(
             'UPDATE approvals SET status = $1, data = $2 WHERE id = $3',
-            [status || row.status, JSON.stringify(updatedData), row.id]
+            [finalStatus, JSON.stringify(updatedData), row.id]
           );
+
+          res.writeHead(200); res.end(JSON.stringify({
+            ok: true,
+            linkedIn: linkedInResult
+          }));
+        } else {
+          res.writeHead(200); res.end(JSON.stringify({ ok: true }));
         }
-        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
       } catch(e) {
         res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
       }
@@ -511,6 +621,60 @@ const server = http.createServer(async (req, res) => {
         console.error('save-revision error:', e.message);
       }
     });
+
+  // GET /linkedin-auth — редирект на LinkedIn для авторизации
+  } else if (req.method === 'GET' && req.url === '/linkedin-auth') {
+    const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code`
+      + `&client_id=${LI_CLIENT_ID}`
+      + `&redirect_uri=${encodeURIComponent(LI_REDIRECT_URI)}`
+      + `&scope=${encodeURIComponent(LI_SCOPES)}`;
+    res.writeHead(302, { Location: url }); res.end();
+
+  // GET /linkedin-callback — получает токен после авторизации
+  } else if (req.method === 'GET' && req.url.startsWith('/linkedin-callback')) {
+    const qs = new URL(req.url, 'https://x').searchParams;
+    const code = qs.get('code');
+    if (!code) { res.writeHead(400); res.end('No code'); return; }
+    try {
+      // Обмен code → access_token
+      const body = `grant_type=authorization_code&code=${code}`
+        + `&redirect_uri=${encodeURIComponent(LI_REDIRECT_URI)}`
+        + `&client_id=${LI_CLIENT_ID}&client_secret=${LI_CLIENT_SECRET}`;
+      const tokenRes = await httpsReq({
+        hostname: 'www.linkedin.com', path: '/oauth/v2/accessToken', method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
+      }, body);
+      const tokenData = JSON.parse(tokenRes.body);
+      const token = tokenData.access_token;
+      if (!token) throw new Error('No token: ' + tokenRes.body);
+
+      // Получить person ID
+      const meRes = await httpsReq({
+        hostname: 'api.linkedin.com', path: '/v2/userinfo', method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const me = JSON.parse(meRes.body);
+      const personId = me.sub;
+
+      // Сохранить в БД
+      await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_token',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [token]);
+      await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES('linkedin_person_id',$1,NOW()) ON CONFLICT(key) DO UPDATE SET value=$1,updated_at=NOW()`, [personId]);
+
+      console.log(`✓ LinkedIn авторизован: person=${personId}`);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+        <style>body{font-family:Arial,sans-serif;max-width:600px;margin:60px auto;text-align:center;}
+        .ok{color:#12B76A;font-size:48px;} h2{color:#0d1117;} p{color:#555;}</style></head><body>
+        <div class="ok">✓</div>
+        <h2>LinkedIn connected!</h2>
+        <p>Account: <strong>${me.name||personId}</strong></p>
+        <p>Token saved. Posts will now publish to LinkedIn automatically.</p>
+        <p style="margin-top:32px;"><a href="/approvals-page" style="background:#3479E9;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Approvals →</a></p>
+      </body></html>`);
+    } catch(e) {
+      console.error('LinkedIn OAuth error:', e.message);
+      res.writeHead(500); res.end('OAuth error: ' + e.message);
+    }
 
   // POST /reset-revisions — сбросить все failed/pending правки
   } else if (req.method === 'POST' && req.url === '/reset-revisions') {

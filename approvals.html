@@ -352,12 +352,8 @@ body { font-family: Arial, sans-serif; background: #f5f7fa; color: #1C1C1D; }
   <!-- POSTS -->
   <div id="section-posts" class="section active">
     <div class="hint">
-      ✅ <strong>How to approve posts:</strong> Check the box next to posts you want to publish → click "Approve Selected" — Yana will get an email with the post texts to copy into LinkedIn.<br>
-      💬 Or leave a comment on any post → the agent will rewrite it and notify you.
-    </div>
-    <div class="publish-bar" id="publish-bar">
-      <span id="publish-bar-text">Selected: 0 posts</span>
-      <button class="btn-pub" onclick="publishSelected()">✅ Approve Selected → Notify Yana</button>
+      ✅ <strong>How to approve posts:</strong> Click <strong>Approve → Post to LinkedIn</strong> — the post will be published automatically.<br>
+      💬 Or leave a comment → agent rewrites and notifies you.
     </div>
     <div id="posts-list"></div>
   </div>
@@ -570,22 +566,26 @@ function renderPublish() {
   el.innerHTML = postCards + landingCards;
 }
 
-async function publishPost(index) {
-  const post = data.posts[index];
-  if (!post) return;
-  // Уведомить Яну и пометить как published
-  await fetch('/publish-posts', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ selectedIndices:[index], posts:data.posts })
-  });
-  // Пометить как published (новый статус)
-  await fetch('/approve', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ type:'posts', index, status:'published', approvedAt: new Date().toISOString() })
-  });
-  showToast('🚀 Published! Post text sent to Yana\'s email for LinkedIn.');
+async function approvePost(index) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Posting to LinkedIn...'; }
+  try {
+    const res = await fetch('/approve', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ type:'posts', index, status:'approved', approvedAt: new Date().toISOString() })
+    });
+    const result = await res.json();
+    if (result.linkedIn?.ok) {
+      showToast('🚀 Posted to LinkedIn automatically!');
+    } else if (result.linkedIn?.reason === 'no_credentials') {
+      showToast('✅ Approved! Set up LinkedIn credentials in Railway to auto-post.');
+    } else {
+      showToast('✅ Approved! LinkedIn: ' + (result.linkedIn?.reason || 'check credentials'));
+    }
+  } catch(e) {
+    showToast('✅ Approved!');
+  }
   await loadData();
 }
 
@@ -634,7 +634,8 @@ function renderPosts() {
         <div class="post-text" id="text-post-${i}">${esc(post.editedContent||post.content||'')}</div>
       </div>
       <div class="actions">
-        <button class="btn btn-blue" onclick="startEdit('post',${i})">✏️ Edit manually</button>
+        <button class="btn btn-green" onclick="approvePost(${i})">✓ Approve → Post to LinkedIn</button>
+        <button class="btn btn-blue" onclick="startEdit('post',${i})">✏️ Edit</button>
         <button class="btn btn-save" id="save-post-${i}" onclick="saveEdit('posts',${i})">💾 Save</button>
         <button class="btn btn-gray" onclick="reject('posts',${i})">Reject</button>
       </div>
@@ -675,7 +676,7 @@ function renderLandings() {
         ${landing.previewUrl?`<a class="landing-url" href="${landing.previewUrl}" target="_blank">🔗 ${landing.previewUrl}</a>`:''}
       </div>
       <div class="actions">
-        <button class="btn btn-green" onclick="approveLanding(${i},'${itemId}')">✓ Approve → Yana will publish</button>
+        <button class="btn btn-green" onclick="approveLanding(${i},'${itemId}')">✓ Approve → Landing goes live</button>
         <button class="btn btn-gray" onclick="reject('landings',${i})">Reject</button>
       </div>
       <div class="rev-block">
@@ -820,8 +821,10 @@ async function approve(type,index) {
   showToast('✓ Approved!');
 }
 async function approveLanding(index, itemId) {
-  await updateItem('landings',index,{status:'approved',approvedAt:new Date().toISOString()});
-  showToast('✅ Approved! Yana will get an email to publish the landing.');
+  await updateItem('landings', index, { status:'published', approvedAt: new Date().toISOString() });
+  const landing = data.landings[index];
+  const url = landing?.previewUrl || '';
+  showToast(url ? `🚀 Landing is live: ${url}` : '✅ Landing approved and live!');
 }
 async function reject(type,index) {
   await updateItem(type,index,{status:'rejected'});
