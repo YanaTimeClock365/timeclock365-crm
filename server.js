@@ -234,46 +234,44 @@ function buildUnsplashKeywords(postText) {
   return 'office,business,professional,team,workplace';
 }
 
-// Скачать фото с Unsplash (следуем редиректам)
-function downloadImageFromUnsplash(keywords, width, height) {
-  return new Promise((resolve, reject) => {
-    const UNSPLASH_KEY = process.env.UNSPLASH_ACCESS_KEY || '';
-    let url;
-    if (UNSPLASH_KEY) {
-      // Официальный API — лучшие результаты
-      url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(keywords)}&orientation=${width > height ? 'landscape' : 'portrait'}&client_id=${UNSPLASH_KEY}`;
-    } else {
-      // Source API без ключа (работает, бесплатно)
-      url = `https://source.unsplash.com/${width}x${height}/?${keywords}`;
-    }
+// Скачать фото через Pexels API
+async function downloadImageFromPexels(keywords, width, height) {
+  const PEXELS_KEY = process.env.PEXELS_API_KEY || '';
+  if (!PEXELS_KEY) throw new Error('PEXELS_API_KEY не установлен');
 
-    const followRedirects = (currentUrl, depth) => {
-      if (depth > 8) { reject(new Error('Too many redirects')); return; }
-      https.get(currentUrl, { headers: { 'User-Agent': 'TimeClock365-Bot/1.0' } }, res => {
-        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
-          const next = res.headers.location.startsWith('http') ? res.headers.location : `https:${res.headers.location}`;
-          followRedirects(next, depth + 1); return;
-        }
-        if (UNSPLASH_KEY && res.statusCode === 200) {
-          // Официальный API возвращает JSON — берём URL картинки
-          let d = '';
-          res.on('data', c => d += c);
-          res.on('end', () => {
-            try {
-              const photo = JSON.parse(d);
-              const imgUrl = photo.urls?.regular || photo.urls?.full;
-              if (!imgUrl) { reject(new Error('No image URL in Unsplash response')); return; }
-              followRedirects(imgUrl, 0);
-            } catch(e) { reject(e); }
-          });
-          return;
+  const orientation = width >= height ? 'landscape' : 'portrait';
+  const query = encodeURIComponent(keywords.split(',')[0].trim());
+
+  // Ищем фото
+  const searchRes = await httpsReq({
+    hostname: 'api.pexels.com',
+    path: `/v1/search?query=${query}&per_page=5&orientation=${orientation}&size=large`,
+    method: 'GET',
+    headers: { 'Authorization': PEXELS_KEY }
+  });
+  const data = JSON.parse(searchRes.body);
+  if (!data.photos || !data.photos.length) throw new Error('Pexels: нет фото для ' + query);
+
+  // Берём случайное из первых 5
+  const photo = data.photos[Math.floor(Math.random() * data.photos.length)];
+  const imgUrl = orientation === 'portrait'
+    ? (photo.src.portrait || photo.src.large)
+    : (photo.src.landscape || photo.src.large2x || photo.src.large);
+
+  // Скачиваем картинку (следуем редиректам)
+  return new Promise((resolve, reject) => {
+    const follow = (url, depth) => {
+      if (depth > 5) { reject(new Error('Too many redirects')); return; }
+      https.get(url, { headers: { 'User-Agent': 'TimeClock365-Bot/1.0' } }, res => {
+        if ([301,302,303,307,308].includes(res.statusCode) && res.headers.location) {
+          follow(res.headers.location, depth + 1); return;
         }
         const chunks = [];
         res.on('data', c => chunks.push(c));
         res.on('end', () => resolve(Buffer.concat(chunks)));
       }).on('error', reject);
     };
-    followRedirects(url, 0);
+    follow(imgUrl, 0);
   });
 }
 
@@ -317,14 +315,14 @@ async function uploadImageToGitHub(imageBuffer, filename) {
   return `${GITHUB_PAGES}/${filePath}`;
 }
 
-// Главная функция: берём фото с Unsplash и загружаем на GitHub
+// Главная функция: берём фото с Pexels и загружаем на GitHub
 async function generateAndUploadBanner(postText, postId, width, height) {
   try {
     const w = width || 1200;
     const h = height || 628;
     const keywords = buildUnsplashKeywords(postText);
-    console.log(`📸 Unsplash фото для "${postId}": [${keywords}] ${w}×${h}`);
-    const imgBuffer = await downloadImageFromUnsplash(keywords, w, h);
+    console.log(`📸 Pexels фото для "${postId}": [${keywords}] ${w}×${h}`);
+    const imgBuffer = await downloadImageFromPexels(keywords, w, h);
     const filename = `${postId}.jpg`;
     const url = await uploadImageToGitHub(imgBuffer, filename);
     console.log(`✓ Фото загружено: ${url}`);
@@ -971,7 +969,7 @@ async function handleRequest(req, res) {
             const postText = postRows[0]?.data?.editedContent || postRows[0]?.data?.content || '';
             keywords = buildUnsplashKeywords(postText);
           }
-          const imgBuffer = await downloadImageFromUnsplash(keywords, w, h);
+          const imgBuffer = await downloadImageFromPexels(keywords, w, h);
           const filename = `${itemId}-v.jpg`;
           const imageUrl = await uploadImageToGitHub(imgBuffer, filename);
           const { rows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
