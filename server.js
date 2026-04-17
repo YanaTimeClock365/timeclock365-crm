@@ -338,14 +338,14 @@ async function generateAndUploadBanner(postText, postId, width, height) {
 // ===================================
 
 // Универсальный HTTPS запрос
-function httpsReq(options, body) {
+function httpsReq(options, body, timeoutMs) {
   return new Promise((resolve, reject) => {
     const req = https.request(options, res => {
       let d = ''; res.on('data', c => d += c);
       res.on('end', () => resolve({ status: res.statusCode, body: d }));
     });
     req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.setTimeout(timeoutMs || 15000, () => { req.destroy(); reject(new Error('timeout')); });
     if (body) req.write(body);
     req.end();
   });
@@ -1053,7 +1053,7 @@ async function callClaude(prompt) {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(body)
     }
-  }, body);
+  }, body, 60000); // 60 сек для Claude
   const data = JSON.parse(r.body);
   if (!data.content?.[0]?.text) throw new Error('Claude error: ' + r.body.slice(0, 200));
   return data.content[0].text.trim();

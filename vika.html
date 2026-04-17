@@ -215,12 +215,14 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
 
 <script>
 let data = { posts: [] };
+let revisions = [];
 
 async function load() {
   try {
-    const r = await fetch('/approvals');
-    const d = await r.json();
+    const [r1, r2] = await Promise.all([fetch('/approvals'), fetch('/revisions')]);
+    const d = await r1.json();
     data.posts = d.posts || [];
+    revisions = await r2.json();
   } catch(e) {}
   render();
 }
@@ -279,6 +281,7 @@ function render() {
 
         <div class="comment-row">
           <div class="comment-label">💬 Попросить агента переписать:</div>
+          ${getRevisionStatus(post.id)}
           <textarea class="comment-input" id="cmt-${i}" placeholder="Опиши что изменить — агент перепишет за ~2 мин"></textarea>
           <button class="btn-comment" onclick="sendComment(${i})">📨 Отправить агенту</button>
         </div>
@@ -369,6 +372,34 @@ async function approve(i) {
   await load();
 }
 
+function getRevisionStatus(postId) {
+  const postRevs = revisions.filter(r => r.item_id === postId && r.type === 'posts');
+  const active = postRevs.find(r => r.status === 'processing' || r.status === 'pending');
+  const last = postRevs.find(r => r.status === 'resolved');
+
+  if (active) {
+    const icon = active.status === 'processing' ? '⚙️' : '⏳';
+    const label = active.status === 'processing' ? 'Агент работает...' : 'Ожидает обработки (~1 мин)';
+    return `<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:13px;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:16px;">${icon}</span>
+      <div>
+        <div style="font-weight:600;color:#b8860b;">${label}</div>
+        <div style="color:#888;margin-top:2px;">"${esc(active.comment)}"</div>
+      </div>
+    </div>`;
+  }
+  if (last) {
+    return `<div style="background:#f0fff4;border:1px solid #b7ebca;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:13px;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:16px;">✅</span>
+      <div>
+        <div style="font-weight:600;color:#1a7a3a;">Готово — посмотри изменения выше</div>
+        <div style="color:#888;margin-top:2px;">"${esc(last.comment)}"</div>
+      </div>
+    </div>`;
+  }
+  return '';
+}
+
 async function sendComment(i) {
   const cmt = document.getElementById(`cmt-${i}`)?.value.trim();
   if (!cmt) { toast('Напиши комментарий перед отправкой'); return; }
@@ -378,10 +409,18 @@ async function sendComment(i) {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ type:'posts', itemId, comment: cmt })
   });
-  toast('📨 Отправлено! Агент перепишет за ~2 минуты');
   document.getElementById(`cmt-${i}`).value = '';
-  setTimeout(load, 30000);
-  setTimeout(load, 90000);
+  toast('📨 Отправлено! Обновляю статус...');
+  // Быстро обновляем чтобы показать "ожидает"
+  await load();
+  // Проверяем каждые 15 сек пока не resolved
+  let checks = 0;
+  const poll = setInterval(async () => {
+    await load();
+    checks++;
+    const rev = revisions.find(r => r.item_id === itemId && r.status === 'resolved' && r.comment === cmt);
+    if (rev || checks > 12) { clearInterval(poll); }
+  }, 15000);
 }
 
 function toast(msg) {
