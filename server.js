@@ -926,6 +926,38 @@ async function handleRequest(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));
 
+  // POST /regen-banners — сгенерировать баннеры для постов без картинок
+  } else if (req.method === 'POST' && req.url === '/regen-banners') {
+    try {
+      if (!GITHUB_TOKEN) {
+        res.writeHead(400); res.end(JSON.stringify({ error: 'GITHUB_TOKEN не установлен' })); return;
+      }
+      const { rows } = await pool.query(
+        "SELECT * FROM approvals WHERE type = 'posts' AND status IN ('pending','edited') ORDER BY created_at ASC"
+      );
+      const needBanner = rows.filter(r => !r.data.imageUrl);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, found: needBanner.length, message: `Запускаем генерацию для ${needBanner.length} постов...` }));
+
+      // Генерируем в фоне последовательно (Pollinations ограничивает параллельные запросы)
+      (async () => {
+        for (const row of needBanner) {
+          const postText = row.data.editedContent || row.data.content || '';
+          const imageUrl = await generateAndUploadBanner(postText, row.item_id);
+          if (imageUrl) {
+            const updated = { ...row.data, imageUrl };
+            await pool.query('UPDATE approvals SET data = $1 WHERE id = $2', [JSON.stringify(updated), row.id]);
+            console.log(`✓ Баннер прикреплён к "${row.item_id}"`);
+          }
+          // Пауза 3 сек между запросами
+          await new Promise(r => setTimeout(r, 3000));
+        }
+        console.log('✓ Генерация баннеров завершена');
+      })().catch(e => console.error('regen-banners error:', e.message));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+
   // POST /reset-revisions — сбросить все failed/pending правки
   } else if (req.method === 'POST' && req.url === '/reset-revisions') {
     try {
