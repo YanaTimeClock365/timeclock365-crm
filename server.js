@@ -207,7 +207,7 @@ async function sendApprovalNotification(type, item) {
 }
 
 // ===================================
-// IMAGE GENERATION — Pollinations.ai + GitHub
+// IMAGE — Unsplash (реальные фото) + GitHub
 // ===================================
 
 const GITHUB_TOKEN  = process.env.GITHUB_TOKEN || '';
@@ -216,42 +216,64 @@ const GITHUB_REPO   = 'timeclock365-landings';
 const GITHUB_FOLDER = 'images/auto';
 const GITHUB_PAGES  = `https://yanatimeclock365.github.io/timeclock365-landings`;
 
-// Тематические промпты для разных типов постов
-function buildImagePrompt(postText) {
+// Ключевые слова для Unsplash по теме поста
+function buildUnsplashKeywords(postText) {
   const t = postText.toLowerCase();
   if (t.includes('access') || t.includes('door') || t.includes('fingerprint') || t.includes('biometric'))
-    return 'modern biometric fingerprint reader at office entrance, dark background, blue LED light, professional photography, no text';
-  if (t.includes('payroll') || t.includes('timesheet') || t.includes('hours') || t.includes('overtime'))
-    return 'HR manager reviewing timesheet data on laptop, modern office, clean desk, warm light, professional photography, no text';
+    return 'office,security,entrance,access-control';
+  if (t.includes('buddy') || t.includes('punch') || t.includes('swipe'))
+    return 'office,team,employee,workplace';
+  if (t.includes('payroll') || t.includes('timesheet') || t.includes('friday') || t.includes('hr manager'))
+    return 'hr,payroll,office,laptop,business';
   if (t.includes('roi') || t.includes('cost') || t.includes('saving') || t.includes('money'))
-    return 'business graph showing growth and savings, professional chart, blue and green colors, clean background, no text';
+    return 'business,growth,finance,success';
   if (t.includes('manufactur') || t.includes('factory') || t.includes('plant') || t.includes('floor'))
-    return 'modern manufacturing plant workers with digital time tracking system, industrial setting, professional photography, no text';
+    return 'manufacturing,factory,industrial,workers';
   if (t.includes('compliance') || t.includes('audit') || t.includes('dispute') || t.includes('legal'))
-    return 'professional business compliance documents and laptop, clean office background, blue accent, no text';
-  // Default — TimeClock 365 branded
-  return 'modern office time tracking system, employees checking in at entrance, professional photography, blue accent lighting, no text';
+    return 'business,documents,professional,meeting';
+  return 'office,business,professional,team,workplace';
 }
 
-// Скачать картинку с Pollinations.ai
-function downloadImage(prompt) {
+// Скачать фото с Unsplash (следуем редиректам)
+function downloadImageFromUnsplash(keywords, width, height) {
   return new Promise((resolve, reject) => {
-    const encoded = encodeURIComponent(prompt);
-    const url = `https://image.pollinations.ai/prompt/${encoded}?width=1200&height=628&nologo=true&model=flux`;
-    https.get(url, res => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        // follow redirect
-        https.get(res.headers.location, res2 => {
-          const chunks = [];
-          res2.on('data', c => chunks.push(c));
-          res2.on('end', () => resolve(Buffer.concat(chunks)));
-        }).on('error', reject);
-        return;
-      }
-      const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-    }).on('error', reject);
+    const UNSPLASH_KEY = process.env.UNSPLASH_ACCESS_KEY || '';
+    let url;
+    if (UNSPLASH_KEY) {
+      // Официальный API — лучшие результаты
+      url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(keywords)}&orientation=${width > height ? 'landscape' : 'portrait'}&client_id=${UNSPLASH_KEY}`;
+    } else {
+      // Source API без ключа (работает, бесплатно)
+      url = `https://source.unsplash.com/${width}x${height}/?${keywords}`;
+    }
+
+    const followRedirects = (currentUrl, depth) => {
+      if (depth > 8) { reject(new Error('Too many redirects')); return; }
+      https.get(currentUrl, { headers: { 'User-Agent': 'TimeClock365-Bot/1.0' } }, res => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          const next = res.headers.location.startsWith('http') ? res.headers.location : `https:${res.headers.location}`;
+          followRedirects(next, depth + 1); return;
+        }
+        if (UNSPLASH_KEY && res.statusCode === 200) {
+          // Официальный API возвращает JSON — берём URL картинки
+          let d = '';
+          res.on('data', c => d += c);
+          res.on('end', () => {
+            try {
+              const photo = JSON.parse(d);
+              const imgUrl = photo.urls?.regular || photo.urls?.full;
+              if (!imgUrl) { reject(new Error('No image URL in Unsplash response')); return; }
+              followRedirects(imgUrl, 0);
+            } catch(e) { reject(e); }
+          });
+          return;
+        }
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      }).on('error', reject);
+    };
+    followRedirects(url, 0);
   });
 }
 
@@ -295,18 +317,20 @@ async function uploadImageToGitHub(imageBuffer, filename) {
   return `${GITHUB_PAGES}/${filePath}`;
 }
 
-// Главная функция: генерируем и загружаем
-async function generateAndUploadBanner(postText, postId) {
+// Главная функция: берём фото с Unsplash и загружаем на GitHub
+async function generateAndUploadBanner(postText, postId, width, height) {
   try {
-    const prompt = buildImagePrompt(postText);
-    console.log(`🎨 Генерируем баннер для "${postId}": ${prompt.slice(0,60)}...`);
-    const imgBuffer = await downloadImage(prompt);
+    const w = width || 1200;
+    const h = height || 628;
+    const keywords = buildUnsplashKeywords(postText);
+    console.log(`📸 Unsplash фото для "${postId}": [${keywords}] ${w}×${h}`);
+    const imgBuffer = await downloadImageFromUnsplash(keywords, w, h);
     const filename = `${postId}.jpg`;
     const url = await uploadImageToGitHub(imgBuffer, filename);
-    console.log(`✓ Баннер загружен: ${url}`);
+    console.log(`✓ Фото загружено: ${url}`);
     return url;
   } catch(e) {
-    console.error('Ошибка генерации баннера:', e.message);
+    console.error('Ошибка загрузки фото:', e.message);
     return null;
   }
 }
@@ -938,17 +962,16 @@ async function handleRequest(req, res) {
         res.end(JSON.stringify({ ok: true, message: 'Генерация запущена...' }));
 
         (async () => {
-          const encoded = encodeURIComponent(prompt);
           const w = width || 1200;
           const h = height || 628;
-          const imgBuffer = await new Promise((resolve, reject) => {
-            const url = `https://image.pollinations.ai/prompt/${encoded}?width=${w}&height=${h}&nologo=true&model=flux`;
-            https.get(url, res => {
-              const follow = (r) => { const ch = []; r.on('data', c => ch.push(c)); r.on('end', () => resolve(Buffer.concat(ch))); };
-              if (res.statusCode === 301 || res.statusCode === 302) { https.get(res.headers.location, follow).on('error', reject); return; }
-              follow(res);
-            }).on('error', reject);
-          });
+          // prompt используем как keywords для Unsplash (или берём из текста поста)
+          let keywords = prompt || '';
+          if (!keywords) {
+            const { rows: postRows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
+            const postText = postRows[0]?.data?.editedContent || postRows[0]?.data?.content || '';
+            keywords = buildUnsplashKeywords(postText);
+          }
+          const imgBuffer = await downloadImageFromUnsplash(keywords, w, h);
           const filename = `${itemId}-v.jpg`;
           const imageUrl = await uploadImageToGitHub(imgBuffer, filename);
           const { rows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
