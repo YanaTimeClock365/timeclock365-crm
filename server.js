@@ -216,28 +216,66 @@ const GITHUB_REPO   = 'timeclock365-landings';
 const GITHUB_FOLDER = 'images/auto';
 const GITHUB_PAGES  = `https://yanatimeclock365.github.io/timeclock365-landings`;
 
-// Ключевые слова по теме поста — несколько вариантов для рандомизации
+// Ключевые слова по теме поста — корпоративный американский офис-стиль
 function buildPhotoKeywords(postText) {
   const t = postText.toLowerCase();
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
   if (t.includes('buddy') || t.includes('punch'))
-    return pick(['employee badge office', 'workplace identity check', 'office entrance turnstile', 'employee id verification']);
-  if (t.includes('fingerprint') || t.includes('biometric'))
-    return pick(['fingerprint scanner office', 'biometric access control', 'security door reader', 'smart office entrance']);
-  if (t.includes('door') || t.includes('access control') || t.includes('entrance'))
-    return pick(['modern office entrance', 'secure office door', 'building access card', 'office lobby security']);
+    return pick([
+      'corporate office employee badge desk',
+      'business professional office building entrance',
+      'american office worker id card',
+      'corporate employee checking in office lobby'
+    ]);
+  if (t.includes('fingerprint') || t.includes('biometric') || t.includes('access control') || t.includes('door'))
+    return pick([
+      'modern office building glass door entrance',
+      'corporate office lobby reception desk',
+      'business office building entrance professional',
+      'american office interior hallway door'
+    ]);
   if (t.includes('manufactur') || t.includes('factory') || t.includes('plant') || t.includes('floor') || t.includes('shift'))
-    return pick(['factory workers production line', 'manufacturing plant employees', 'industrial workers shift', 'warehouse team work']);
-  if (t.includes('payroll') || t.includes('timesheet') || t.includes('friday'))
-    return pick(['hr manager laptop office', 'payroll processing business', 'accountant working computer', 'office woman spreadsheet']);
-  if (t.includes('roi') || t.includes('cost') || t.includes('saving') || t.includes('money') || t.includes('3,536') || t.includes('770'))
-    return pick(['business growth chart', 'financial success office', 'manager reviewing results', 'executive business analytics']);
-  if (t.includes('compliance') || t.includes('audit') || t.includes('legal') || t.includes('dispute') || t.includes('tribunal'))
-    return pick(['business compliance documents', 'professional legal meeting', 'office audit review', 'executive signing documents']);
+    return pick([
+      'american factory worker hard hat office',
+      'industrial professional workplace safety',
+      'manufacturing manager office meeting',
+      'warehouse professional business office'
+    ]);
+  if (t.includes('payroll') || t.includes('timesheet') || t.includes('friday') || t.includes('hr manager'))
+    return pick([
+      'business woman laptop office desk',
+      'hr professional office computer work',
+      'corporate woman manager office meeting',
+      'american businesswoman office working'
+    ]);
+  if (t.includes('roi') || t.includes('cost') || t.includes('saving') || t.includes('money'))
+    return pick([
+      'business executive office meeting table',
+      'american businessman office presentation',
+      'corporate manager office desk documents',
+      'professional office business review'
+    ]);
+  if (t.includes('compliance') || t.includes('audit') || t.includes('legal') || t.includes('dispute'))
+    return pick([
+      'business professional signing documents office',
+      'corporate meeting room executives table',
+      'american office professional review papers',
+      'business compliance office professional meeting'
+    ]);
   if (t.includes('two system') || t.includes('separate system') || t.includes('integrat'))
-    return pick(['technology integration office', 'business software laptop', 'connected office systems', 'digital workplace modern']);
-  return pick(['professional office team', 'modern business workspace', 'corporate office interior', 'business people working']);
+    return pick([
+      'corporate office technology laptop modern',
+      'business professional computer office desk',
+      'american office open space team working',
+      'modern corporate office interior team'
+    ]);
+  return pick([
+    'american corporate office professional team',
+    'business office interior modern desk',
+    'corporate professional office building',
+    'american business office meeting room'
+  ]);
 }
 
 // Скачать вертикальное фото через Pexels API (без повторений — рандомная страница)
