@@ -170,27 +170,118 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
 }
 .done-title { font-size: 14px; font-weight: 600; color: #555; }
 .done-meta  { font-size: 12px; color: #aaa; }
+
+/* Nav tabs */
+.nav-tabs {
+  background: #fff;
+  border-bottom: 2px solid #e0e8f5;
+  display: flex;
+  padding: 0 24px;
+  gap: 0;
+}
+.nav-tab {
+  padding: 14px 22px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: #888;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s;
+  white-space: nowrap;
+  display: flex; align-items: center; gap: 7px;
+}
+.nav-tab:hover { color: #0A66C2; }
+.nav-tab.active { color: #0A66C2; border-bottom-color: #0A66C2; }
+.nav-tab .cnt {
+  background: #0A66C2; color: #fff;
+  border-radius: 10px; padding: 1px 8px;
+  font-size: 11px; font-weight: 700;
+  display: none;
+}
+.nav-tab .cnt.show { display: inline-block; }
+
+.page-section { display: none; }
+.page-section.active { display: block; }
+
+/* Report card */
+.report-card {
+  background: #fff; border-radius: 12px;
+  border: 1px solid #e0e8f5;
+  margin-bottom: 20px; overflow: hidden;
+  box-shadow: 0 2px 8px rgba(10,102,194,0.05);
+}
+.report-card-top {
+  background: #f7f9ff; border-bottom: 1px solid #e8eef8;
+  padding: 14px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.report-type { font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 1px; color: #0A66C2; }
+.report-date { font-size: 12px; color: #aaa; }
+.report-body {
+  padding: 20px; font-size: 14px; line-height: 1.8; color: #333;
+  white-space: pre-wrap; max-height: 400px; overflow-y: auto;
+}
+
+/* Email card */
+.email-card {
+  background: #fff; border-radius: 12px;
+  border: 1px solid #e0e8f5; margin-bottom: 20px; overflow: hidden;
+  box-shadow: 0 2px 8px rgba(10,102,194,0.05);
+}
+.email-card-top {
+  background: #f7f9ff; border-bottom: 1px solid #e8eef8;
+  padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;
+}
+.email-num { font-weight: 700; font-size: 13px; color: #0A66C2; }
+.email-subject { font-size: 14px; font-weight: 600; color: #222; margin-top: 2px; }
+.email-body { padding: 20px; font-size: 14px; line-height: 1.8; color: #333;
+  white-space: pre-wrap; max-height: 360px; overflow-y: auto; }
+.email-badge { background: #e8f0ff; color: #0A66C2; border: 1px solid #90b8f8;
+  border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
 </style>
 </head>
 <body>
 
 <div class="header">
   <div>
-    <h1>📝 LinkedIn Посты</h1>
-    <p>Редактируй → добавь фото → публикуй одним нажатием</p>
+    <h1>TimeClock 365</h1>
+    <p>Согласование контента</p>
   </div>
 </div>
 
+<div class="nav-tabs">
+  <div class="nav-tab active" onclick="switchTab('posts')">📝 Посты <span class="cnt" id="cnt-posts"></span></div>
+  <div class="nav-tab" onclick="switchTab('reports')">📊 Отчёты <span class="cnt" id="cnt-reports"></span></div>
+  <div class="nav-tab" onclick="switchTab('emails')">✉️ Рассылка <span class="cnt" id="cnt-emails"></span></div>
+</div>
+
 <div class="container">
-  <div id="pending-list"></div>
-  <div id="sched-section" style="display:none;">
-    <div class="section-title">⏰ Запланированные</div>
-    <div id="sched-list"></div>
+
+  <!-- ПОСТЫ -->
+  <div class="page-section active" id="section-posts">
+    <div id="pending-list"></div>
+    <div id="sched-section" style="display:none;">
+      <div class="section-title">⏰ Запланированные</div>
+      <div id="sched-list"></div>
+    </div>
+    <div id="done-section" style="display:none;">
+      <div class="section-title">✓ Опубликованные</div>
+      <div id="done-list"></div>
+    </div>
   </div>
-  <div id="done-section" style="display:none;">
-    <div class="section-title">✓ Опубликованные</div>
-    <div id="done-list"></div>
+
+  <!-- ОТЧЁТЫ -->
+  <div class="page-section" id="section-reports">
+    <div id="reports-list"></div>
   </div>
+
+  <!-- РАССЫЛКА -->
+  <div class="page-section" id="section-emails">
+    <div id="emails-list"></div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
@@ -213,15 +304,57 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
 </div>
 
 <script>
-let data = { posts: [] };
+let data = { posts: [], reports: [], emails: [] };
+let currentTab = 'posts';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.nav-tab[onclick="switchTab('${tab}')"]`).classList.add('active');
+  document.getElementById(`section-${tab}`).classList.add('active');
+}
+
+const REPORT_LABELS = {
+  competitors: '📊 Конкуренты',
+  seo: '🔍 SEO',
+  weekly: '📅 Недельный отчёт',
+  monthly: '📆 Месячный отчёт',
+  landings: '🏗️ Лендинги'
+};
 
 async function load() {
   try {
     const r = await fetch('/approvals');
     const d = await r.json();
     data.posts = d.posts || [];
+    // Собираем все отчёты
+    data.reports = [];
+    for (const type of ['competitors','seo','weekly','monthly','landings']) {
+      for (const item of (d[type] || [])) {
+        data.reports.push({ ...item, _type: type });
+      }
+    }
+    data.emails = d.emails || [];
   } catch(e) {}
   render();
+  updateCounts();
+}
+
+function updateCounts() {
+  const pendingPosts = data.posts.filter(p => ['pending','edited'].includes(p.status)).length;
+  const cntPosts = document.getElementById('cnt-posts');
+  if (pendingPosts > 0) { cntPosts.textContent = pendingPosts; cntPosts.classList.add('show'); }
+  else cntPosts.classList.remove('show');
+
+  const cntReports = document.getElementById('cnt-reports');
+  if (data.reports.length > 0) { cntReports.textContent = data.reports.length; cntReports.classList.add('show'); }
+  else cntReports.classList.remove('show');
+
+  const pendingEmails = data.emails.filter(e => e.status === 'pending').length;
+  const cntEmails = document.getElementById('cnt-emails');
+  if (pendingEmails > 0) { cntEmails.textContent = pendingEmails; cntEmails.classList.add('show'); }
+  else cntEmails.classList.remove('show');
 }
 
 function esc(s) {
@@ -348,6 +481,49 @@ function render() {
       </div>`).join('');
   } else {
     doneSection.style.display = 'none';
+  }
+
+  // ОТЧЁТЫ
+  const reportsEl = document.getElementById('reports-list');
+  if (!data.reports.length) {
+    reportsEl.innerHTML = `<div class="empty"><h2>Отчётов нет</h2><p>Агенты генерируют отчёты каждый понедельник в 9:00</p></div>`;
+  } else {
+    // Сортируем: сначала свежие
+    const sorted = [...data.reports].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    reportsEl.innerHTML = sorted.map(r => {
+      const label = REPORT_LABELS[r._type] || r._type;
+      const bodyText = r.content || r.summary || r.text || JSON.stringify(r, null, 2);
+      return `<div class="report-card">
+        <div class="report-card-top">
+          <div>
+            <div class="report-type">${label}</div>
+            <div class="report-date">${r.date || ''}</div>
+          </div>
+        </div>
+        <div class="report-body">${esc(bodyText)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // РАССЫЛКА
+  const emailsEl = document.getElementById('emails-list');
+  if (!data.emails.length) {
+    emailsEl.innerHTML = `<div class="empty"><h2>Писем нет</h2><p>Агент генерирует письма для прогрева лидов автоматически</p></div>`;
+  } else {
+    emailsEl.innerHTML = data.emails.map((e, i) => {
+      const subject = e.subject || e.title || `Письмо ${i+1}`;
+      const body = e.body || e.content || e.text || '';
+      const delay = e.delay_days != null ? `День ${e.delay_days}` : (e.sendAfterDays != null ? `День ${e.sendAfterDays}` : '');
+      return `<div class="email-card">
+        <div class="email-card-top">
+          <div>
+            <div class="email-num">${delay ? delay + ' — ' : ''}${esc(subject)}</div>
+          </div>
+          <span class="email-badge">${e.status === 'active' ? '✓ Активно' : e.status || 'Шаблон'}</span>
+        </div>
+        <div class="email-body">${esc(body)}</div>
+      </div>`;
+    }).join('');
   }
 }
 
