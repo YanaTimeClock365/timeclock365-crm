@@ -216,49 +216,65 @@ const GITHUB_REPO   = 'timeclock365-landings';
 const GITHUB_FOLDER = 'images/auto';
 const GITHUB_PAGES  = `https://yanatimeclock365.github.io/timeclock365-landings`;
 
-// Ключевые слова для Unsplash по теме поста
-function buildUnsplashKeywords(postText) {
+// Ключевые слова по теме поста — несколько вариантов для рандомизации
+function buildPhotoKeywords(postText) {
   const t = postText.toLowerCase();
-  if (t.includes('access') || t.includes('door') || t.includes('fingerprint') || t.includes('biometric'))
-    return 'office,security,entrance,access-control';
-  if (t.includes('buddy') || t.includes('punch') || t.includes('swipe'))
-    return 'office,team,employee,workplace';
-  if (t.includes('payroll') || t.includes('timesheet') || t.includes('friday') || t.includes('hr manager'))
-    return 'hr,payroll,office,laptop,business';
-  if (t.includes('roi') || t.includes('cost') || t.includes('saving') || t.includes('money'))
-    return 'business,growth,finance,success';
-  if (t.includes('manufactur') || t.includes('factory') || t.includes('plant') || t.includes('floor'))
-    return 'manufacturing,factory,industrial,workers';
-  if (t.includes('compliance') || t.includes('audit') || t.includes('dispute') || t.includes('legal'))
-    return 'business,documents,professional,meeting';
-  return 'office,business,professional,team,workplace';
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+  if (t.includes('buddy') || t.includes('punch'))
+    return pick(['employee badge office', 'workplace identity check', 'office entrance turnstile', 'employee id verification']);
+  if (t.includes('fingerprint') || t.includes('biometric'))
+    return pick(['fingerprint scanner office', 'biometric access control', 'security door reader', 'smart office entrance']);
+  if (t.includes('door') || t.includes('access control') || t.includes('entrance'))
+    return pick(['modern office entrance', 'secure office door', 'building access card', 'office lobby security']);
+  if (t.includes('manufactur') || t.includes('factory') || t.includes('plant') || t.includes('floor') || t.includes('shift'))
+    return pick(['factory workers production line', 'manufacturing plant employees', 'industrial workers shift', 'warehouse team work']);
+  if (t.includes('payroll') || t.includes('timesheet') || t.includes('friday'))
+    return pick(['hr manager laptop office', 'payroll processing business', 'accountant working computer', 'office woman spreadsheet']);
+  if (t.includes('roi') || t.includes('cost') || t.includes('saving') || t.includes('money') || t.includes('3,536') || t.includes('770'))
+    return pick(['business growth chart', 'financial success office', 'manager reviewing results', 'executive business analytics']);
+  if (t.includes('compliance') || t.includes('audit') || t.includes('legal') || t.includes('dispute') || t.includes('tribunal'))
+    return pick(['business compliance documents', 'professional legal meeting', 'office audit review', 'executive signing documents']);
+  if (t.includes('two system') || t.includes('separate system') || t.includes('integrat'))
+    return pick(['technology integration office', 'business software laptop', 'connected office systems', 'digital workplace modern']);
+  return pick(['professional office team', 'modern business workspace', 'corporate office interior', 'business people working']);
 }
 
-// Скачать фото через Pexels API
+// Скачать вертикальное фото через Pexels API (без повторений — рандомная страница)
 async function downloadImageFromPexels(keywords, width, height) {
   const PEXELS_KEY = process.env.PEXELS_API_KEY || '';
   if (!PEXELS_KEY) throw new Error('PEXELS_API_KEY не установлен');
 
-  const orientation = width >= height ? 'landscape' : 'portrait';
-  const query = encodeURIComponent(keywords.split(',')[0].trim());
+  // Всегда portrait для вертикальных постов
+  const orientation = 'portrait';
+  const query = encodeURIComponent(keywords.trim());
+  // Рандомная страница (1-4) чтобы фото не повторялись
+  const page = Math.floor(Math.random() * 4) + 1;
 
-  // Ищем фото
   const searchRes = await httpsReq({
     hostname: 'api.pexels.com',
-    path: `/v1/search?query=${query}&per_page=5&orientation=${orientation}&size=large`,
+    path: `/v1/search?query=${query}&per_page=15&page=${page}&orientation=${orientation}&size=large`,
     method: 'GET',
     headers: { 'Authorization': PEXELS_KEY }
   });
   const data = JSON.parse(searchRes.body);
-  if (!data.photos || !data.photos.length) throw new Error('Pexels: нет фото для ' + query);
+  if (!data.photos || !data.photos.length) {
+    // Fallback — общий запрос
+    const fb = await httpsReq({
+      hostname: 'api.pexels.com',
+      path: `/v1/search?query=professional+office+business&per_page=15&page=${page}&orientation=portrait&size=large`,
+      method: 'GET',
+      headers: { 'Authorization': PEXELS_KEY }
+    });
+    const fd = JSON.parse(fb.body);
+    if (!fd.photos?.length) throw new Error('Pexels: нет фото');
+    data.photos = fd.photos;
+  }
 
-  // Берём случайное из первых 5
+  // Случайное фото из результатов
   const photo = data.photos[Math.floor(Math.random() * data.photos.length)];
-  const imgUrl = orientation === 'portrait'
-    ? (photo.src.portrait || photo.src.large)
-    : (photo.src.landscape || photo.src.large2x || photo.src.large);
+  const imgUrl = photo.src.portrait || photo.src.large2x || photo.src.large;
 
-  // Скачиваем картинку (следуем редиректам)
   return new Promise((resolve, reject) => {
     const follow = (url, depth) => {
       if (depth > 5) { reject(new Error('Too many redirects')); return; }
@@ -315,14 +331,12 @@ async function uploadImageToGitHub(imageBuffer, filename) {
   return `${GITHUB_PAGES}/${filePath}`;
 }
 
-// Главная функция: берём фото с Pexels и загружаем на GitHub
-async function generateAndUploadBanner(postText, postId, width, height) {
+// Главная функция: берём вертикальное фото с Pexels и загружаем на GitHub
+async function generateAndUploadBanner(postText, postId) {
   try {
-    const w = width || 1200;
-    const h = height || 628;
-    const keywords = buildUnsplashKeywords(postText);
-    console.log(`📸 Pexels фото для "${postId}": [${keywords}] ${w}×${h}`);
-    const imgBuffer = await downloadImageFromPexels(keywords, w, h);
+    const keywords = buildPhotoKeywords(postText);
+    console.log(`📸 Pexels portrait для "${postId}": [${keywords}]`);
+    const imgBuffer = await downloadImageFromPexels(keywords, 1080, 1350);
     const filename = `${postId}.jpg`;
     const url = await uploadImageToGitHub(imgBuffer, filename);
     console.log(`✓ Фото загружено: ${url}`);
@@ -976,16 +990,11 @@ async function handleRequest(req, res) {
         res.end(JSON.stringify({ ok: true, message: 'Генерация запущена...' }));
 
         (async () => {
-          const w = width || 1200;
-          const h = height || 628;
-          // prompt используем как keywords для Unsplash (или берём из текста поста)
-          let keywords = prompt || '';
-          if (!keywords) {
-            const { rows: postRows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
-            const postText = postRows[0]?.data?.editedContent || postRows[0]?.data?.content || '';
-            keywords = buildUnsplashKeywords(postText);
-          }
-          const imgBuffer = await downloadImageFromPexels(keywords, w, h);
+          // Берём текст поста и строим keywords по теме
+          const { rows: postRows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
+          const postText = postRows[0]?.data?.editedContent || postRows[0]?.data?.content || '';
+          const keywords = prompt || buildPhotoKeywords(postText);
+          const imgBuffer = await downloadImageFromPexels(keywords, 1080, 1350);
           const filename = `${itemId}-v.jpg`;
           const imageUrl = await uploadImageToGitHub(imgBuffer, filename);
           const { rows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
