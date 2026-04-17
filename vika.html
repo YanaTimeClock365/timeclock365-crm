@@ -520,19 +520,50 @@ function render() {
   if (!data.reports.length) {
     reportsEl.innerHTML = `<div class="empty"><h2>Отчётов нет</h2><p>Агенты генерируют отчёты каждый понедельник в 9:00</p></div>`;
   } else {
-    // Сортируем: сначала свежие
     const sorted = [...data.reports].sort((a,b) => (b.date||'').localeCompare(a.date||''));
     reportsEl.innerHTML = sorted.map(r => {
       const label = REPORT_LABELS[r._type] || r._type;
-      const bodyText = r.content || r.summary || r.text || JSON.stringify(r, null, 2);
+
+      // Рендерим содержимое отчёта читаемо
+      let bodyHtml = '';
+
+      // Insights / массив строк
+      if (Array.isArray(r.insights) && r.insights.length) {
+        bodyHtml += r.insights.map(ins => `<div style="padding:8px 0 8px 14px;border-left:3px solid #0A66C2;margin-bottom:8px;font-size:14px;line-height:1.6;color:#333;">${esc(ins)}</div>`).join('');
+      }
+      // Строковый summary/content/description
+      const textField = r.summary || r.content || r.description || r.text;
+      if (textField && typeof textField === 'string') {
+        bodyHtml += `<div style="font-size:14px;line-height:1.8;color:#333;white-space:pre-wrap;">${esc(textField)}</div>`;
+      }
+      // Recommendations
+      if (Array.isArray(r.recommendations) && r.recommendations.length) {
+        bodyHtml += `<div style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin:14px 0 6px;">Рекомендации</div>`;
+        bodyHtml += r.recommendations.map(rec => `<div style="padding:6px 0 6px 14px;border-left:3px solid #12B76A;margin-bottom:6px;font-size:13px;color:#333;">${esc(rec)}</div>`).join('');
+      }
+      // Keywords / topics
+      if (Array.isArray(r.keywords) && r.keywords.length) {
+        bodyHtml += `<div style="margin-top:12px;">${r.keywords.map(k=>`<span style="background:#f0f4ff;color:#0A66C2;border-radius:12px;padding:2px 10px;font-size:12px;margin:2px 3px 2px 0;display:inline-block;">${esc(k)}</span>`).join('')}</div>`;
+      }
+      if (Array.isArray(r.topics) && r.topics.length) {
+        bodyHtml += `<div style="margin-top:12px;">${r.topics.map(k=>`<span style="background:#f0f4ff;color:#0A66C2;border-radius:12px;padding:2px 10px;font-size:12px;margin:2px 3px 2px 0;display:inline-block;">${esc(k)}</span>`).join('')}</div>`;
+      }
+      // Если совсем ничего — показываем только базовые поля, без JSON
+      if (!bodyHtml) {
+        const skip = new Set(['date','status','_type','id','type','item_id','created_at','updated_at']);
+        const entries = Object.entries(r).filter(([k,v]) => !skip.has(k) && v && typeof v === 'string');
+        bodyHtml = entries.map(([k,v]) => `<div style="margin-bottom:8px;"><span style="font-size:11px;color:#aaa;text-transform:uppercase;">${k}</span><div style="font-size:14px;color:#333;line-height:1.6;white-space:pre-wrap;">${esc(v)}</div></div>`).join('');
+      }
+      if (!bodyHtml) bodyHtml = `<div style="color:#aaa;font-size:13px;">Нет данных</div>`;
+
       return `<div class="report-card">
         <div class="report-card-top">
           <div>
             <div class="report-type">${label}</div>
-            <div class="report-date">${r.date || ''}</div>
+            <div class="report-date">${r.date || ''} ${r.title ? '· ' + esc(r.title) : ''}</div>
           </div>
         </div>
-        <div class="report-body">${esc(bodyText)}</div>
+        <div class="report-body" style="max-height:350px;overflow-y:auto;">${bodyHtml}</div>
       </div>`;
     }).join('');
   }
