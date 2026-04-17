@@ -926,6 +926,43 @@ async function handleRequest(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));
 
+  // POST /gen-banner — сгенерировать баннер с кастомными размерами для конкретного поста
+  } else if (req.method === 'POST' && req.url === '/gen-banner') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        if (!GITHUB_TOKEN) { res.writeHead(400); res.end(JSON.stringify({ error: 'No GITHUB_TOKEN' })); return; }
+        const { itemId, prompt, width, height } = JSON.parse(body);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, message: 'Генерация запущена...' }));
+
+        (async () => {
+          const encoded = encodeURIComponent(prompt);
+          const w = width || 1200;
+          const h = height || 628;
+          const imgBuffer = await new Promise((resolve, reject) => {
+            const url = `https://image.pollinations.ai/prompt/${encoded}?width=${w}&height=${h}&nologo=true&model=flux`;
+            https.get(url, res => {
+              const follow = (r) => { const ch = []; r.on('data', c => ch.push(c)); r.on('end', () => resolve(Buffer.concat(ch))); };
+              if (res.statusCode === 301 || res.statusCode === 302) { https.get(res.headers.location, follow).on('error', reject); return; }
+              follow(res);
+            }).on('error', reject);
+          });
+          const filename = `${itemId}-v.jpg`;
+          const imageUrl = await uploadImageToGitHub(imgBuffer, filename);
+          const { rows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [itemId]);
+          if (rows[0]) {
+            const updated = { ...rows[0].data, imageUrl };
+            await pool.query('UPDATE approvals SET data = $1 WHERE item_id = $2', [JSON.stringify(updated), itemId]);
+            console.log(`✓ Вертикальный баннер: ${imageUrl}`);
+          }
+        })().catch(e => console.error('gen-banner error:', e.message));
+      } catch(e) {
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
+      }
+    });
+
   // POST /regen-banners — сгенерировать баннеры для постов без картинок
   } else if (req.method === 'POST' && req.url === '/regen-banners') {
     try {
