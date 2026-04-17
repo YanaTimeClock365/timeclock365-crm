@@ -1171,9 +1171,7 @@ initDB().then(() => {
   });
   setInterval(checkAndSendEmails, 15 * 60 * 1000);
   checkAndSendEmails();
-  // Проверяем комментарии Вики каждую минуту
-  setInterval(checkAndProcessRevisions, 60 * 1000);
-  setTimeout(checkAndProcessRevisions, 5000); // первый запуск через 5 сек
+  // Правки постов обрабатывает scheduled task timeclock-landing-revisor (каждые 2 мин)
 }).catch(err => {
   console.error('Ошибка инициализации БД:', err.message);
   server.listen(config.PORT, () => {
