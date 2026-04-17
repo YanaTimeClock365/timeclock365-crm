@@ -52,6 +52,20 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
 .badge-new  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
 .badge-ok   { background: #d4edda; color: #155724; border: 1px solid #28a745; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
 .badge-edit { background: #e8f0ff; color: #0A66C2; border: 1px solid #90b8f8; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.badge-sched { background: #e8f5e9; color: #2e7d32; border: 1px solid #81c784; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+
+.day-header {
+  font-size: 13px; font-weight: 700; color: #0A66C2;
+  text-transform: uppercase; letter-spacing: 1px;
+  margin: 28px 0 10px; padding: 8px 14px;
+  background: #e8f0ff; border-radius: 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.slot-time {
+  display: inline-block; background: #0A66C2; color: #fff;
+  border-radius: 12px; padding: 2px 10px; font-size: 12px;
+  font-weight: 700; letter-spacing: 0;
+}
 
 .post-text {
   padding: 20px;
@@ -169,6 +183,10 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
 
 <div class="container">
   <div id="pending-list"></div>
+  <div id="sched-section" style="display:none;">
+    <div class="section-title">⏰ Запланированные</div>
+    <div id="sched-list"></div>
+  </div>
   <div id="done-section" style="display:none;">
     <div class="section-title">✓ Опубликованные</div>
     <div id="done-list"></div>
@@ -210,8 +228,24 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+const DAYS_RU = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+const MONTHS_RU = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  return `${DAYS_RU[d.getDay()]}, ${d.getDate()} ${MONTHS_RU[d.getMonth()]}`;
+}
+
+function slotLabel(slot) {
+  if (slot === 'noon') return '12:00';
+  if (slot === 'afternoon') return '16:00';
+  return '';
+}
+
 function render() {
   const pending = data.posts.filter(p => ['pending','edited'].includes(p.status));
+  const scheduled = data.posts.filter(p => p.status === 'scheduled');
   const done    = data.posts.filter(p => ['approved','published'].includes(p.status));
 
   const el = document.getElementById('pending-list');
@@ -219,22 +253,38 @@ function render() {
   if (!pending.length) {
     el.innerHTML = `<div class="empty">
       <h2>Новых постов нет</h2>
-      <p>Агент добавляет посты каждый вторник в 9:00</p>
+      <p>Агент добавляет посты каждый понедельник в 9:00</p>
     </div>`;
   } else {
+    // Группируем по дням если есть scheduledFor
+    let lastDay = null;
     el.innerHTML = pending.map((post, ri) => {
       const i = data.posts.indexOf(post);
       const text = post.editedContent || post.content || '';
       const isEdited = post.status === 'edited';
+      const hasSchedule = post.scheduledFor && post.slot;
+      const timeLabel = slotLabel(post.slot);
+
       const badge = isEdited
         ? `<span class="badge-edit">✏️ Отредактирован</span>`
         : `<span class="badge-new">⏳ Новый</span>`;
-      return `
+
+      let dayHeader = '';
+      if (hasSchedule && post.scheduledFor !== lastDay) {
+        lastDay = post.scheduledFor;
+        dayHeader = `<div class="day-header">📅 ${formatDate(post.scheduledFor)}</div>`;
+      }
+
+      const btnLabel = hasSchedule
+        ? `✅ Согласовано — выйдет в ${timeLabel}`
+        : `✅ Согласовано`;
+
+      return `${dayHeader}
       <div class="post-card" id="card-${i}">
         <div class="card-top">
           <div>
-            <div class="card-num">Пост ${ri+1}</div>
-            <div class="card-date">${post.date||''}</div>
+            <div class="card-num">${hasSchedule ? `<span class="slot-time">${timeLabel}</span>` : `Пост ${ri+1}`}</div>
+            <div class="card-date">${hasSchedule ? formatDate(post.scheduledFor) : (post.date||'')}</div>
           </div>
           ${badge}
         </div>
@@ -254,7 +304,7 @@ function render() {
           </div>
           ${post.imageUrl ? `<div style="margin-top:-4px;cursor:zoom-in;" onclick="openLightbox('${esc(post.imageUrl)}')"><img src="${esc(post.imageUrl)}" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;border:1px solid #e0e8f5;" onerror="this.style.display='none'"/><div style="text-align:center;font-size:11px;color:#aaa;margin-top:4px;">🔍 Нажми чтобы открыть полностью</div></div>` : ''}
           <button class="btn btn-approve" id="btn-${i}" onclick="approve(${i})">
-            🚀 Одобрить и опубликовать в LinkedIn
+            ${btnLabel}
           </button>
         </div>
 
@@ -266,6 +316,23 @@ function render() {
     }).join('');
   }
 
+  // Запланированные (одобрены, ждут публикации)
+  const schedEl = document.getElementById('sched-list');
+  const schedSection = document.getElementById('sched-section');
+  if (scheduled.length) {
+    schedSection.style.display = 'block';
+    schedEl.innerHTML = scheduled.map((post, ri) => `
+      <div class="done-card">
+        <div>
+          <div class="done-title">${post.slot ? slotLabel(post.slot) : ''} · ${formatDate(post.scheduledFor) || post.date || ''}</div>
+          <div class="done-meta">Выйдет автоматически в ${slotLabel(post.slot)}</div>
+        </div>
+        <span class="badge-sched">⏰ Запланирован</span>
+      </div>`).join('');
+  } else {
+    schedSection.style.display = 'none';
+  }
+
   // Done section
   const doneEl = document.getElementById('done-list');
   const doneSection = document.getElementById('done-section');
@@ -274,7 +341,7 @@ function render() {
     doneEl.innerHTML = done.map((post, ri) => `
       <div class="done-card">
         <div>
-          <div class="done-title">Пост ${ri+1} · ${post.date||''}</div>
+          <div class="done-title">${post.slot ? slotLabel(post.slot) + ' · ' : ''}${formatDate(post.scheduledFor) || post.date || ''}</div>
           <div class="done-meta">${post.publishedAt ? 'Опубликован: ' + new Date(post.publishedAt).toLocaleString('ru') : 'Одобрен'}</div>
         </div>
         <span class="badge-ok">✓ Опубликован</span>
@@ -314,37 +381,43 @@ async function saveEdit(i) {
 async function approve(i) {
   const btn = document.getElementById(`btn-${i}`);
   const imageUrl = document.getElementById(`img-${i}`)?.value.trim() || '';
-
-  // Сначала сохраняем текст если он редактировался
   const textEl = document.getElementById(`text-${i}`);
   const editedContent = textEl?.innerText || '';
+  const post = data.posts[i];
+  const hasSchedule = post && post.scheduledFor && post.slot;
 
   btn.disabled = true;
-  btn.textContent = '⏳ Публикуем в LinkedIn...';
+  btn.textContent = '⏳ Сохраняем...';
+
+  // Если у поста есть расписание — одобряем со статусом 'scheduled' (публикуется в 12:00/16:00)
+  const status = hasSchedule ? 'scheduled' : 'approved';
 
   try {
     const res = await fetch('/approve', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        type: 'posts', index: i, status: 'approved',
-        editedContent: editedContent,
-        approvedAt: new Date().toISOString(),
+        type: 'posts', index: i, status,
+        editedContent, approvedAt: new Date().toISOString(),
         imageUrl: imageUrl || undefined
       })
     });
     const result = await res.json();
-    if (result.linkedIn?.ok) {
-      toast('🚀 Пост опубликован в LinkedIn!');
+    if (hasSchedule) {
+      const timeLabel = post.slot === 'noon' ? '12:00' : '16:00';
+      toast(`✅ Согласовано! Выйдет в ${timeLabel}`);
+      document.getElementById(`card-${i}`).classList.add('done');
+    } else if (result.linkedIn?.ok) {
+      toast('✅ Пост опубликован в LinkedIn!');
       document.getElementById(`card-${i}`).classList.add('done');
     } else {
       toast('⚠️ LinkedIn: ' + (result.linkedIn?.reason || JSON.stringify(result.linkedIn)));
       btn.disabled = false;
-      btn.innerHTML = '🚀 Одобрить и опубликовать в LinkedIn';
+      btn.innerHTML = '✅ Согласовано';
     }
   } catch(e) {
     toast('❌ Ошибка: ' + e.message);
     btn.disabled = false;
-    btn.innerHTML = '🚀 Одобрить и опубликовать в LinkedIn';
+    btn.innerHTML = '✅ Согласовано';
   }
   await load();
 }

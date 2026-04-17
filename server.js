@@ -657,18 +657,20 @@ async function handleRequest(req, res) {
           if (previewUrl !== undefined) updatedData.previewUrl = previewUrl;
           if (imageUrl !== undefined) updatedData.imageUrl = imageUrl;
 
-          // Автопостинг в LinkedIn когда пост одобрен
+          // Автопостинг в LinkedIn когда пост одобрен (только если нет расписания)
           let linkedInResult = null;
-          if (type === 'posts' && status === 'approved') {
+          const hasSchedule = updatedData.scheduledFor || row.data.scheduledFor;
+          if (type === 'posts' && status === 'approved' && !hasSchedule) {
             const text = updatedData.editedContent || row.data.editedContent || row.data.content || '';
-            linkedInResult = await postToLinkedIn(text, imageUrl || null);
+            linkedInResult = await postToLinkedIn(text, imageUrl || updatedData.imageUrl || null);
             if (linkedInResult.ok) {
               updatedData.publishedAt = new Date().toISOString();
               updatedData.linkedInPosted = true;
             }
           }
 
-          const finalStatus = (type === 'posts' && status === 'approved' && linkedInResult?.ok)
+          // Если scheduled — просто сохраняем без публикации
+          const finalStatus = (type === 'posts' && status === 'approved' && !hasSchedule && linkedInResult?.ok)
             ? 'published' : (status || row.status);
 
           await pool.query(
@@ -1087,6 +1089,53 @@ async function handleRequest(req, res) {
     } catch(e) {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
+
+  // POST /publish-due — публикует запланированные посты для указанного слота
+  } else if (req.method === 'POST' && req.url === '/publish-due') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { slot } = JSON.parse(body || '{}');
+        // Сегодняшняя дата в UTC (совпадает с GMT+3 для 09:00 и 13:00 UTC)
+        const today = new Date().toISOString().slice(0, 10);
+
+        const { rows } = await pool.query(
+          `SELECT * FROM approvals WHERE type='posts' AND status='scheduled' ORDER BY created_at ASC`
+        );
+
+        const due = rows.filter(r => {
+          const d = r.data;
+          if (d.scheduledFor !== today) return false;
+          if (slot && d.slot !== slot) return false;
+          return true;
+        });
+
+        console.log(`/publish-due slot=${slot} date=${today}: найдено ${due.length} постов`);
+        const results = [];
+
+        for (const row of due) {
+          const d = row.data;
+          const text = d.editedContent || d.content || '';
+          const imgUrl = d.imageUrl || null;
+          try {
+            const r = await postToLinkedIn(text, imgUrl);
+            const updatedData = { ...d, publishedAt: new Date().toISOString(), linkedInPosted: r.ok };
+            const newStatus = r.ok ? 'published' : 'scheduled';
+            await pool.query('UPDATE approvals SET status=$1, data=$2 WHERE id=$3',
+              [newStatus, JSON.stringify(updatedData), row.id]);
+            results.push({ id: row.item_id, ok: r.ok, reason: r.reason });
+            console.log(`  ${r.ok ? '✓' : '✗'} ${row.item_id}`);
+          } catch(e) {
+            results.push({ id: row.item_id, ok: false, reason: e.message });
+          }
+        }
+
+        res.writeHead(200); res.end(JSON.stringify({ ok: true, published: results.length, results }));
+      } catch(e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
 
   } else {
     res.writeHead(404); res.end('Not found');
