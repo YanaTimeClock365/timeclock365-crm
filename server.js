@@ -1031,6 +1031,126 @@ async function handleRequest(req, res) {
 } // end handleRequest
 
 // ===================================
+// АВТОНОМНЫЙ АГЕНТ — обрабатывает комментарии Вики
+// ===================================
+
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+async function callClaude(prompt) {
+  if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY не установлен');
+  const body = JSON.stringify({
+    model: 'claude-3-5-haiku-20241022',
+    max_tokens: 2048,
+    messages: [{ role: 'user', content: prompt }]
+  });
+  const r = await httpsReq({
+    hostname: 'api.anthropic.com',
+    path: '/v1/messages',
+    method: 'POST',
+    headers: {
+      'x-api-key': ANTHROPIC_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body)
+    }
+  }, body);
+  const data = JSON.parse(r.body);
+  if (!data.content?.[0]?.text) throw new Error('Claude error: ' + r.body.slice(0, 200));
+  return data.content[0].text.trim();
+}
+
+async function processRevision(revision) {
+  const { id, type, item_id, comment } = revision;
+  console.log(`🤖 Обрабатываю правку #${id}: "${comment.slice(0, 60)}"`);
+
+  // Помечаем как "в работе"
+  await pool.query("UPDATE revisions SET status = 'processing' WHERE id = $1", [id]);
+
+  try {
+    const { rows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [item_id]);
+    if (!rows[0]) throw new Error('Пост не найден: ' + item_id);
+    const postData = rows[0].data;
+    const currentContent = postData.editedContent || postData.content || '';
+
+    const c = comment.toLowerCase();
+    const wantsImage = c.includes('картинк') || c.includes('фото') || c.includes('изображен') || c.includes('баннер');
+    const onlyImage = wantsImage && (c.includes('только') || c.length < 20);
+
+    let newContent = currentContent;
+    let summary = '';
+
+    // Правка текста через Claude
+    if (!onlyImage) {
+      const claudePrompt = `You are editing a LinkedIn post for TimeClock 365 — time tracking + door access control software for engineering companies (50-500 employees). Target audience: HR Managers, Operations Directors.
+
+Current post:
+${currentContent}
+
+Editor's request: ${comment}
+
+Rules:
+- Apply ONLY what was requested, keep everything else unchanged
+- Keep English language
+- Keep professional, direct tone — no buzzwords, no "game-changer"
+- Return ONLY the revised post text, no explanations
+
+Revised post:`;
+      newContent = await callClaude(claudePrompt);
+      summary = `Текст обновлён: "${comment}"`;
+    }
+
+    // Сохраняем новый текст
+    const updatedData = { ...postData, editedContent: newContent };
+    await pool.query(
+      "UPDATE approvals SET data = $1, status = 'edited' WHERE item_id = $2",
+      [JSON.stringify(updatedData), item_id]
+    );
+
+    // Новая картинка если попросили
+    if (wantsImage) {
+      const keywords = buildUnsplashKeywords(newContent);
+      generateAndUploadBanner(newContent, item_id, 1080, 1350).then(async imageUrl => {
+        if (imageUrl) {
+          const { rows: r2 } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [item_id]);
+          if (r2[0]) {
+            await pool.query(
+              'UPDATE approvals SET data = $1 WHERE item_id = $2',
+              [JSON.stringify({ ...r2[0].data, imageUrl }), item_id]
+            );
+            console.log(`✓ Новое фото для ${item_id}: ${imageUrl}`);
+          }
+        }
+      }).catch(e => console.error('Image error:', e.message));
+      summary += ' + новое фото';
+    }
+
+    // Помечаем правку как выполненную
+    await pool.query(
+      "UPDATE revisions SET status = 'resolved', resolved_at = NOW(), summary = $1 WHERE id = $2",
+      [summary || `Выполнено: "${comment}"`, id]
+    );
+    console.log(`✓ Правка #${id} готова`);
+
+  } catch(e) {
+    console.error(`✗ Ошибка правки #${id}:`, e.message);
+    await pool.query("UPDATE revisions SET status = 'failed' WHERE id = $1", [id]);
+  }
+}
+
+async function checkAndProcessRevisions() {
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM revisions WHERE type = 'posts' AND status = 'pending' ORDER BY created_at ASC LIMIT 3"
+    );
+    for (const rev of rows) {
+      await processRevision(rev);
+    }
+  } catch(e) {
+    console.error('checkAndProcessRevisions error:', e.message);
+  }
+}
+
+// ===================================
 // ЗАПУСК
 // ===================================
 
@@ -1040,9 +1160,11 @@ initDB().then(() => {
   });
   setInterval(checkAndSendEmails, 15 * 60 * 1000);
   checkAndSendEmails();
+  // Проверяем комментарии Вики каждую минуту
+  setInterval(checkAndProcessRevisions, 60 * 1000);
+  setTimeout(checkAndProcessRevisions, 5000); // первый запуск через 5 сек
 }).catch(err => {
   console.error('Ошибка инициализации БД:', err.message);
-  // Запускаем сервер даже без БД
   server.listen(config.PORT, () => {
     console.log(`✓ Сервер запущен (без БД) на порту ${config.PORT}`);
   });
