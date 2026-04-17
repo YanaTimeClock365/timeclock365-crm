@@ -942,6 +942,17 @@ async function handleRequest(req, res) {
       res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
     }
 
+  // GET /test-claude — проверить Claude API
+  } else if (req.method === 'GET' && req.url === '/test-claude') {
+    try {
+      const result = await callClaude('Reply with exactly: OK');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, result, key_set: !!ANTHROPIC_KEY, key_prefix: ANTHROPIC_KEY.slice(0,8) }));
+    } catch(e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message, key_set: !!ANTHROPIC_KEY }));
+    }
+
   // GET /linkedin-test — тестовый пост в LinkedIn
   } else if (req.method === 'GET' && req.url === '/linkedin-test') {
     const result = await postToLinkedIn('🧪 Тест автопостинга TimeClock 365. Если видишь это — LinkedIn интеграция работает! #TimeClock365');
