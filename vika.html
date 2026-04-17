@@ -240,6 +240,25 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
   white-space: pre-wrap; max-height: 360px; overflow-y: auto; }
 .email-badge { background: #e8f0ff; color: #0A66C2; border: 1px solid #90b8f8;
   border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+
+/* Leads table */
+.leads-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff;
+  border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(10,102,194,0.06); }
+.leads-table th { background: #f0f4ff; color: #0A66C2; font-weight: 700;
+  padding: 11px 14px; text-align: left; border-bottom: 2px solid #dce8ff; white-space: nowrap; }
+.leads-table td { padding: 10px 14px; border-bottom: 1px solid #f0f4f8; vertical-align: middle; color: #333; }
+.leads-table tr:last-child td { border-bottom: none; }
+.leads-table tr:hover td { background: #f7f9ff; }
+.email-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  margin-right: 3px; }
+.dot-sent { background: #12B76A; }
+.dot-pending { background: #ddd; }
+.lead-source { background: #e8f0ff; color: #0A66C2; border-radius: 10px;
+  padding: 2px 8px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.lead-new { background: #fff3cd; color: #856404; border-radius: 10px;
+  padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.lead-done { background: #d4edda; color: #155724; border-radius: 10px;
+  padding: 2px 8px; font-size: 11px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -255,6 +274,7 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
   <div class="nav-tab active" onclick="switchTab('posts')">📝 Посты <span class="cnt" id="cnt-posts"></span></div>
   <div class="nav-tab" onclick="switchTab('reports')">📊 Отчёты <span class="cnt" id="cnt-reports"></span></div>
   <div class="nav-tab" onclick="switchTab('emails')">✉️ Рассылка <span class="cnt" id="cnt-emails"></span></div>
+  <div class="nav-tab" onclick="switchTab('leads')">👥 Лиды <span class="cnt" id="cnt-leads"></span></div>
 </div>
 
 <div class="container">
@@ -282,6 +302,11 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
     <div id="emails-list"></div>
   </div>
 
+  <!-- ЛИДЫ -->
+  <div class="page-section" id="section-leads">
+    <div id="leads-list"></div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
@@ -304,7 +329,7 @@ body { font-family: Arial, sans-serif; background: #f0f4fb; color: #1C1C1D; min-
 </div>
 
 <script>
-let data = { posts: [], reports: [], emails: [] };
+let data = { posts: [], reports: [], emails: [], leads: [] };
 let currentTab = 'posts';
 
 function switchTab(tab) {
@@ -325,10 +350,12 @@ const REPORT_LABELS = {
 
 async function load() {
   try {
-    const r = await fetch('/approvals');
-    const d = await r.json();
+    const [appRes, leadsRes] = await Promise.all([
+      fetch('/approvals'),
+      fetch('/subscribers')
+    ]);
+    const d = await appRes.json();
     data.posts = d.posts || [];
-    // Собираем все отчёты
     data.reports = [];
     for (const type of ['competitors','seo','weekly','monthly','landings']) {
       for (const item of (d[type] || [])) {
@@ -336,6 +363,7 @@ async function load() {
       }
     }
     data.emails = d.emails || [];
+    data.leads = await leadsRes.json();
   } catch(e) {}
   render();
   updateCounts();
@@ -355,6 +383,10 @@ function updateCounts() {
   const cntEmails = document.getElementById('cnt-emails');
   if (pendingEmails > 0) { cntEmails.textContent = pendingEmails; cntEmails.classList.add('show'); }
   else cntEmails.classList.remove('show');
+
+  const cntLeads = document.getElementById('cnt-leads');
+  if (data.leads.length > 0) { cntLeads.textContent = data.leads.length; cntLeads.classList.add('show'); }
+  else cntLeads.classList.remove('show');
 }
 
 function esc(s) {
@@ -505,25 +537,71 @@ function render() {
     }).join('');
   }
 
-  // РАССЫЛКА
+  // РАССЫЛКА — показываем шаблоны писем из emails.js как описание цепочки
   const emailsEl = document.getElementById('emails-list');
-  if (!data.emails.length) {
-    emailsEl.innerHTML = `<div class="empty"><h2>Писем нет</h2><p>Агент генерирует письма для прогрева лидов автоматически</p></div>`;
-  } else {
-    emailsEl.innerHTML = data.emails.map((e, i) => {
-      const subject = e.subject || e.title || `Письмо ${i+1}`;
-      const body = e.body || e.content || e.text || '';
-      const delay = e.delay_days != null ? `День ${e.delay_days}` : (e.sendAfterDays != null ? `День ${e.sendAfterDays}` : '');
-      return `<div class="email-card">
-        <div class="email-card-top">
-          <div>
-            <div class="email-num">${delay ? delay + ' — ' : ''}${esc(subject)}</div>
-          </div>
-          <span class="email-badge">${e.status === 'active' ? '✓ Активно' : e.status || 'Шаблон'}</span>
+  const emailSequence = [
+    { day: 'День 0', subject: 'One system instead of two — here\'s how it works', desc: 'Сразу после подписки. Объясняем что такое TimeClock 365 — door entry = timesheet entry автоматически.' },
+    { day: 'День 2', subject: 'The real cost of running two systems', desc: '104 часа в год на сверку. $10k–$20k скрытых затрат для компании на 150 человек. Окупаемость за 12 месяцев.' },
+    { day: 'День 5', subject: 'Buddy punching is costing you more than you think', desc: '$50k+ в год payroll leakage при 200 сотрудниках. Биометрия на входе = единственная защита. Дверь = табельный учёт.' },
+    { day: 'День 9', subject: 'How one engineering firm cut audit prep from 4 days to 40 minutes', desc: 'Кейс: с 4 дней до 40 минут на подготовку к инспекции. FLSA compliance автоматически.' },
+    { day: 'День 14', subject: 'Free setup session — 30 minutes, no obligation', desc: 'Последнее письмо. Бесплатная 30-минутная сессия. ROI расчёт. Никаких обязательств.' },
+  ];
+  emailsEl.innerHTML = `
+    <div style="background:#e8f0ff;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:#0A66C2;line-height:1.6;">
+      ✉️ <strong>Цепочка из 5 писем на английском.</strong> Отправляются автоматически каждому новому лиду.
+    </div>
+    ${emailSequence.map((e, i) => `
+    <div class="email-card">
+      <div class="email-card-top">
+        <div>
+          <div class="email-num">Письмо ${i+1} · ${esc(e.day)}</div>
+          <div style="font-size:14px;font-weight:600;color:#222;margin-top:3px;">${esc(e.subject)}</div>
         </div>
-        <div class="email-body">${esc(body)}</div>
-      </div>`;
-    }).join('');
+        <span class="email-badge">✓ Активно</span>
+      </div>
+      <div class="email-body" style="max-height:none;font-size:13px;color:#666;">${esc(e.desc)}</div>
+    </div>`).join('')}`;
+
+  // ЛИДЫ
+  const leadsEl = document.getElementById('leads-list');
+  if (!data.leads.length) {
+    leadsEl.innerHTML = `<div class="empty"><h2>Лидов пока нет</h2><p>Новые лиды появятся здесь после заполнения формы на сайте</p></div>`;
+  } else {
+    function dot(sent) {
+      return `<span class="email-dot ${sent ? 'dot-sent' : 'dot-pending'}" title="${sent ? 'Отправлено' : 'Ещё нет'}"></span>`;
+    }
+    function fmtDate(d) {
+      if (!d) return '—';
+      return new Date(d).toLocaleDateString('ru', { day:'2-digit', month:'short' });
+    }
+    leadsEl.innerHTML = `
+    <div style="overflow-x:auto;">
+    <table class="leads-table">
+      <thead>
+        <tr>
+          <th>Имя</th>
+          <th>Email</th>
+          <th>Источник</th>
+          <th>Подписан</th>
+          <th>Письма (1–5)</th>
+          <th>Статус</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data.leads.map(l => `
+        <tr>
+          <td><strong>${esc(l.name)}</strong></td>
+          <td style="color:#0A66C2;">${esc(l.email)}</td>
+          <td><span class="lead-source">${esc(l.source||'direct')}</span></td>
+          <td>${fmtDate(l.subscribedAt)}</td>
+          <td style="white-space:nowrap;">
+            ${dot(l.email1Sent)}${dot(l.email2Sent)}${dot(l.email3Sent)}${dot(l.email4Sent)}${dot(l.email5Sent)}
+          </td>
+          <td>${l.completed ? '<span class="lead-done">✓ Завершён</span>' : '<span class="lead-new">⏳ В процессе</span>'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>`;
   }
 }
 

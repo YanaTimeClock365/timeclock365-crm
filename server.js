@@ -73,6 +73,8 @@ async function initDB() {
   await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS original_content TEXT`);
   await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS summary TEXT`);
   await pool.query(`ALTER TABLE approvals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS email4_sent TIMESTAMP`);
+  await pool.query(`ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS email5_sent TIMESTAMP`);
 
   // Таблица настроек (токены и т.д.)
   await pool.query(`
@@ -102,7 +104,9 @@ async function sendEmail(to, name, emailNumber) {
   const emailData =
     emailNumber === 1 ? emails.email1(name) :
     emailNumber === 2 ? emails.email2(name) :
-    emails.email3(name);
+    emailNumber === 3 ? emails.email3(name) :
+    emailNumber === 4 ? emails.email4(name) :
+    emails.email5(name);
 
   try {
     await transporter.sendMail({
@@ -139,15 +143,25 @@ async function checkAndSendEmails() {
         if (ok) await pool.query(
           'UPDATE subscribers SET email1_sent = NOW() WHERE id = $1', [sub.id]
         );
-      } else if (!sub.email2_sent && now - subscribedAt >= dayInMs) {
+      } else if (!sub.email2_sent && now - subscribedAt >= 2 * dayInMs) {
         const ok = await sendEmail(sub.email, sub.name, 2);
         if (ok) await pool.query(
           'UPDATE subscribers SET email2_sent = NOW() WHERE id = $1', [sub.id]
         );
-      } else if (!sub.email3_sent && now - subscribedAt >= 3 * dayInMs) {
+      } else if (!sub.email3_sent && now - subscribedAt >= 5 * dayInMs) {
         const ok = await sendEmail(sub.email, sub.name, 3);
         if (ok) await pool.query(
-          'UPDATE subscribers SET email3_sent = NOW(), completed = TRUE WHERE id = $1', [sub.id]
+          'UPDATE subscribers SET email3_sent = NOW() WHERE id = $1', [sub.id]
+        );
+      } else if (!sub.email4_sent && now - subscribedAt >= 9 * dayInMs) {
+        const ok = await sendEmail(sub.email, sub.name, 4);
+        if (ok) await pool.query(
+          'UPDATE subscribers SET email4_sent = NOW() WHERE id = $1', [sub.id]
+        );
+      } else if (!sub.email5_sent && now - subscribedAt >= 14 * dayInMs) {
+        const ok = await sendEmail(sub.email, sub.name, 5);
+        if (ok) await pool.query(
+          'UPDATE subscribers SET email5_sent = NOW(), completed = TRUE WHERE id = $1', [sub.id]
         );
       }
     }
@@ -576,6 +590,7 @@ async function handleRequest(req, res) {
         name: r.name, email: r.email, source: r.source,
         subscribedAt: r.subscribed_at,
         email1Sent: r.email1_sent, email2Sent: r.email2_sent, email3Sent: r.email3_sent,
+        email4Sent: r.email4_sent, email5Sent: r.email5_sent,
         completed: r.completed, status: r.status, notes: r.notes
       }));
       res.writeHead(200, { 'Content-Type': 'application/json' });
