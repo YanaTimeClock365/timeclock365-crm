@@ -388,18 +388,23 @@ async function postToLinkedIn(text, imageUrl) {
     } catch(e) { console.log('Image upload failed, will use article preview:', e.message); }
   }
 
+  // Вставить ссылку перед хэштегами
+  function addLink(t) {
+    const m = t.match(/([\s\S]*?)(\n+)(#[\w#\s]+)$/);
+    if (m) return m[1] + '\n\n' + SITE_URL + '\n\n' + m[3].trim();
+    return t + '\n\n' + SITE_URL;
+  }
+
   let shareContent;
   if (imageAsset) {
-    // Пост с загруженной картинкой + ссылка в тексте
     shareContent = {
-      shareCommentary: { text: text + `\n\n${SITE_URL}` },
+      shareCommentary: { text: addLink(text) },
       shareMediaCategory: 'IMAGE',
       media: [{ status: 'READY', media: imageAsset }]
     };
   } else {
-    // Пост со ссылкой — LinkedIn подтянет OG-картинку с сайта
     shareContent = {
-      shareCommentary: { text },
+      shareCommentary: { text: addLink(text) },
       shareMediaCategory: 'ARTICLE',
       media: [{
         status: 'READY',
