@@ -207,6 +207,111 @@ async function sendApprovalNotification(type, item) {
 }
 
 // ===================================
+// IMAGE GENERATION — Pollinations.ai + GitHub
+// ===================================
+
+const GITHUB_TOKEN  = process.env.GITHUB_TOKEN || '';
+const GITHUB_OWNER  = 'YanaTimeClock365';
+const GITHUB_REPO   = 'timeclock365-landings';
+const GITHUB_FOLDER = 'images/auto';
+const GITHUB_PAGES  = `https://yanatimeclock365.github.io/timeclock365-landings`;
+
+// Тематические промпты для разных типов постов
+function buildImagePrompt(postText) {
+  const t = postText.toLowerCase();
+  if (t.includes('access') || t.includes('door') || t.includes('fingerprint') || t.includes('biometric'))
+    return 'modern biometric fingerprint reader at office entrance, dark background, blue LED light, professional photography, no text';
+  if (t.includes('payroll') || t.includes('timesheet') || t.includes('hours') || t.includes('overtime'))
+    return 'HR manager reviewing timesheet data on laptop, modern office, clean desk, warm light, professional photography, no text';
+  if (t.includes('roi') || t.includes('cost') || t.includes('saving') || t.includes('money'))
+    return 'business graph showing growth and savings, professional chart, blue and green colors, clean background, no text';
+  if (t.includes('manufactur') || t.includes('factory') || t.includes('plant') || t.includes('floor'))
+    return 'modern manufacturing plant workers with digital time tracking system, industrial setting, professional photography, no text';
+  if (t.includes('compliance') || t.includes('audit') || t.includes('dispute') || t.includes('legal'))
+    return 'professional business compliance documents and laptop, clean office background, blue accent, no text';
+  // Default — TimeClock 365 branded
+  return 'modern office time tracking system, employees checking in at entrance, professional photography, blue accent lighting, no text';
+}
+
+// Скачать картинку с Pollinations.ai
+function downloadImage(prompt) {
+  return new Promise((resolve, reject) => {
+    const encoded = encodeURIComponent(prompt);
+    const url = `https://image.pollinations.ai/prompt/${encoded}?width=1200&height=628&nologo=true&model=flux`;
+    https.get(url, res => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        // follow redirect
+        https.get(res.headers.location, res2 => {
+          const chunks = [];
+          res2.on('data', c => chunks.push(c));
+          res2.on('end', () => resolve(Buffer.concat(chunks)));
+        }).on('error', reject);
+        return;
+      }
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    }).on('error', reject);
+  });
+}
+
+// Загрузить картинку в GitHub репозиторий через API
+async function uploadImageToGitHub(imageBuffer, filename) {
+  if (!GITHUB_TOKEN) throw new Error('GITHUB_TOKEN не установлен');
+  const filePath = `${GITHUB_FOLDER}/${filename}`;
+  const content = imageBuffer.toString('base64');
+
+  // Проверяем существует ли файл (нужен SHA для обновления)
+  let sha = '';
+  try {
+    const check = await httpsReq({
+      hostname: 'api.github.com',
+      path: `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filePath}`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${GITHUB_TOKEN}`, 'User-Agent': 'TimeClock365-Bot' }
+    });
+    if (check.status === 200) sha = JSON.parse(check.body).sha;
+  } catch(e) {}
+
+  const body = JSON.stringify({
+    message: `Auto-generated banner: ${filename}`,
+    content,
+    ...(sha ? { sha } : {})
+  });
+
+  const r = await httpsReq({
+    hostname: 'api.github.com',
+    path: `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filePath}`,
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${GITHUB_TOKEN}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+      'User-Agent': 'TimeClock365-Bot'
+    }
+  }, body);
+
+  if (r.status !== 201 && r.status !== 200) throw new Error(`GitHub upload failed: ${r.status} ${r.body.slice(0,200)}`);
+  return `${GITHUB_PAGES}/${filePath}`;
+}
+
+// Главная функция: генерируем и загружаем
+async function generateAndUploadBanner(postText, postId) {
+  try {
+    const prompt = buildImagePrompt(postText);
+    console.log(`🎨 Генерируем баннер для "${postId}": ${prompt.slice(0,60)}...`);
+    const imgBuffer = await downloadImage(prompt);
+    const filename = `${postId}.jpg`;
+    const url = await uploadImageToGitHub(imgBuffer, filename);
+    console.log(`✓ Баннер загружен: ${url}`);
+    return url;
+  } catch(e) {
+    console.error('Ошибка генерации баннера:', e.message);
+    return null;
+  }
+}
+
+// ===================================
 // LINKEDIN HELPERS
 // ===================================
 
@@ -519,6 +624,21 @@ async function handleRequest(req, res) {
         if (added) {
           console.log(`+ Согласование: ${type} "${item.id}"`);
           sendApprovalNotification(type, item);
+
+          // Автогенерация баннера для постов LinkedIn
+          if (type === 'posts' && GITHUB_TOKEN) {
+            const postText = item.content || item.editedContent || '';
+            generateAndUploadBanner(postText, item.id).then(async imageUrl => {
+              if (imageUrl) {
+                const { rows } = await pool.query('SELECT data FROM approvals WHERE item_id = $1', [item.id]);
+                if (rows[0]) {
+                  const updated = { ...rows[0].data, imageUrl };
+                  await pool.query('UPDATE approvals SET data = $1 WHERE item_id = $2', [JSON.stringify(updated), item.id]);
+                  console.log(`✓ Баннер прикреплён к посту "${item.id}"`);
+                }
+              }
+            }).catch(e => console.error('Banner gen error:', e.message));
+          }
         }
         res.writeHead(200); res.end(JSON.stringify({ ok: true, added }));
       } catch(e) {
